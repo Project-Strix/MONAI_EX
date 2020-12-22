@@ -10,3 +10,5 @@
 # limitations under the License.
 
 from monai.networks.nets import *
+
+from monai_ex.networks.nets.dynunet import DynUNetEx
