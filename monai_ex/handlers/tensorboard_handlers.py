@@ -9,7 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Callable
+import logging
+from typing import TYPE_CHECKING, Callable, Optional
 
 import numpy as np
 import torch
@@ -19,8 +20,9 @@ from monai.visualize import plot_2d_or_3d_image
 from monai.handlers import TensorBoardImageHandler
 
 if TYPE_CHECKING:
-    from ignite.engine import Engine
+    from ignite.engine import Engine, Events
 else:
+    Events, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Events")
     Engine, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Engine")
 
 DEFAULT_TAG = "Loss"
@@ -87,3 +89,35 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
             )
 
         self._writer.flush()
+
+class TensorboardGraphHandler:
+    """
+    TensorboardGraph for visualize network architecture using tensorboard
+    """
+    def __init__(self,
+                 net,
+                 writer,
+                 output_transform: Callable = lambda x: x,
+                 logger_name: Optional[str] = None
+    ) -> None:
+        self.net = net
+        self.writer = writer
+        self.output_transform = output_transform
+        self.logger_name = logger_name
+        self.logger = logging.getLogger(logger_name)
+    
+    def attach(self, engine: Engine) -> None:
+        if self.logger_name is None:
+            self.logger = engine.logger
+        
+        engine.add_event_handler(Events.STARTED, self)
+
+    def __call__(self, engine: Engine) -> None:
+        inputs = self.output_transform(engine.state.output)
+        if inputs is not None:
+            try:
+                self.writer.add_graph(self.net, inputs[0:1,...], False)
+            except Exception as e:
+                self.logger.error(f'Error occurred when adding graph to tensorboard: {e}')
+        else:
+            self.logger.warn('No inputs are found! Skip adding graph!')
