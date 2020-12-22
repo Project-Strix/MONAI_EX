@@ -10,7 +10,7 @@ import torch
 
 from monai.transforms.compose import Transform
 from monai.utils import InterpolateMode, ensure_tuple, ensure_tuple_size
-
+from scipy import ndimage as ndi
 
 class FixedResize(Transform):
     """
@@ -106,3 +106,80 @@ class Transpose(Transform):
     
     def __call__(self, img: np.ndarray) -> np.ndarray:
         return np.transpose(img, axes=self.axes).astype(img.dtype)
+
+
+class LabelMorphology(Transform):
+    def __init__(self, 
+                 mode: str,
+                 radius: int,
+                 binary: bool):
+        """
+        Args:
+            mode: morphology mode, e.g. 'closing', 'dilation', 'erosion', 'opening'
+            radius: radius of morphology operation.
+            binary: whether using binary morphology (for binary data)
+
+        """
+        self.mode = mode
+        self.radius = radius
+        self.binary = binary
+        assert self.mode in ['closing', 'dilation', 'erosion', 'opening'], \
+            f"Mode must be one of 'closing', 'dilation', 'erosion', 'opening', but got {self.mode}"
+
+    def __call__(self, 
+                 img: np.ndarray, 
+                 mode: Optional[str]=None,
+                 radius: Optional[int]=None,
+                 binary: Optional[bool]=None) -> np.ndarray:
+        """
+        Apply the transform to `img`.
+
+        """
+        self.mode = self.mode if mode is None else mode
+        self.radius = self.radius if radius is None else radius
+        self.binary = self.binary if binary is None else binary
+
+        input_ndim = img.squeeze().ndim # spatial ndim
+        if input_ndim == 2:
+            structure = ndi.generate_binary_structure(2, 1)
+        elif input_ndim == 3:
+            structure = ndi.generate_binary_structure(3, 1)
+        else:
+            raise ValueError('Currently only support 2D&3D data')
+        
+        channel_dim = None
+        if input_ndim != img.ndim:
+            channel_dim = img.shape.index(1)
+            img = img.squeeze()
+
+        if self.mode == 'closing':
+            if self.binary:
+                img = ndi.binary_closing(img, structure=structure, iterations=self.radius)
+            else:
+                for _ in range(self.radius):
+                    img = ndi.grey_closing(img, footprint=structure)        
+        elif self.mode == 'dilation':
+            if self.binary:
+                img = ndi.binary_dilation(img, structure=structure, iterations=self.radius)
+            else:
+                for _ in range(self.radius):
+                    img = ndi.grey_dilation(img, footprint=structure)
+        elif self.mode == 'erosion':
+            if self.binary:
+                img = ndi.binary_erosion(img, structure=structure, iterations=self.radius)
+            else:
+                for _ in range(self.radius):
+                    img = ndi.grey_erosion(img, footprint=structure)
+        elif self.mode == 'opening':
+            if self.binary:
+                img = ndi.binary_opening(img, structure=structure, iterations=self.radius)
+            else:
+                for _ in range(self.radius):
+                    img = ndi.grey_opening(img, footprint=structure)
+        else:
+            raise ValueError(f'Unexpected keyword {self.mode}')
+        
+        if channel_dim is not None:
+            return np.expand_dims(img, axis=channel_dim)
+        else:
+            return img

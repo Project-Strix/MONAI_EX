@@ -21,7 +21,7 @@ import numpy as np
 
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform
-from monai_ex.transforms.spatial.array import FixedResize, Transpose
+from monai_ex.transforms.spatial.array import FixedResize, Transpose, LabelMorphology
 
 from monai.utils import (
     GridSampleMode,
@@ -62,6 +62,7 @@ class FixedResized(MapTransform):
             d[key] = self.resizer(d[key], mode=self.mode[idx], align_corners=self.align_corners[idx])
         return d
 
+
 class Transposed(MapTransform):
     """
     Dict-based version :py:class:`monai.transforms.Transpose`.
@@ -84,6 +85,32 @@ class Transposed(MapTransform):
         return d
 
 
+class LabelMorphologyd(MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`DataMorphology`.
+    """
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        mode: str,
+        radius: int,
+        binary: bool,
+    ) -> None:
+        super().__init__(keys)
+        self.mode = ensure_tuple_rep(mode, len(self.keys))
+        self.radius = ensure_tuple_rep(radius, len(self.keys))
+        self.binary = ensure_tuple_rep(binary, len(self.keys))
+        self.converter = LabelMorphology('dilation', 0, True)
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for idx, key in enumerate(self.keys):
+            if self.radius[idx] <= 0:
+                continue
+            d[key] = self.converter(d[key], mode=self.mode[idx], radius=self.radius[idx], binary=self.binary[idx])
+        return d
+
 FixedResizeD = FixedResizeDict = FixedResized
 TransposeD = TransposeDict = Transposed
-
+LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd

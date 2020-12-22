@@ -10,7 +10,7 @@ import numpy as np
 
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform
-from monai.transforms.intensity.array import ScaleIntensityRange
+from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
 
 
 class ScaleIntensityViaDicomd(MapTransform):
@@ -54,4 +54,33 @@ class ScaleIntensityViaDicomd(MapTransform):
         return d
 
 
+class MaskIntensityExd(MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`monai.transforms.MaskIntensity`.
+
+    Args:
+        keys: keys of the corresponding items to be transformed.
+            See also: :py:class:`monai.transforms.compose.MapTransform`
+        mask_data: if mask data is single channel, apply to evey channel
+            of input image. if multiple channels, the channel number must
+            match input data. mask_data will be converted to `bool` values
+            by `mask_data > 0` before applying transform to input image.
+
+    """
+
+    def __init__(self, keys: KeysCollection, mask_key: KeysCollection) -> None:
+        super().__init__(keys)
+        self.mask_key = mask_key
+        self.converter = MaskIntensity(mask_data=np.array([]))
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        mask_data = d[self.mask_key]
+        for key in self.keys:
+            d[key] = self.converter(d[key], mask_data=mask_data)
+        return d
+
+
+
 ScaleIntensityViaDicomD = ScaleIntensityViaDicomDict = ScaleIntensityViaDicomd
+MaskIntensityExD = MaskIntensityExDict = MaskIntensityExd
