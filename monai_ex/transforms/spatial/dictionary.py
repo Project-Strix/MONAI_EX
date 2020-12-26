@@ -21,7 +21,7 @@ import numpy as np
 
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform
-from monai_ex.transforms.spatial.array import FixedResize, Transpose, LabelMorphology
+from monai_ex.transforms.spatial.array import FixedResize, LabelMorphology
 
 from monai.utils import (
     GridSampleMode,
@@ -63,28 +63,6 @@ class FixedResized(MapTransform):
         return d
 
 
-class Transposed(MapTransform):
-    """
-    Dict-based version :py:class:`monai.transforms.Transpose`.
-
-    Args:
-        keys: Keys to pick data for transformation.
-    """
-    def __init__(
-        self,
-        keys: KeysCollection,
-        axes: Optional[Sequence[int]] = None,
-    ) -> None:
-        super().__init__(keys)
-        self.transposer = Transpose(axes=axes)
-    
-    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
-        d = dict(data)
-        for idx, key in enumerate(self.keys):
-            d[key] = self.transposer(d[key])
-        return d
-
-
 class LabelMorphologyd(MapTransform):
     """
     Dictionary-based wrapper of :py:class:`DataMorphology`.
@@ -112,5 +90,4 @@ class LabelMorphologyd(MapTransform):
         return d
 
 FixedResizeD = FixedResizeDict = FixedResized
-TransposeD = TransposeDict = Transposed
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd

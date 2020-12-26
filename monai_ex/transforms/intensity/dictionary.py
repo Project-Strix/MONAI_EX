@@ -9,11 +9,11 @@ from typing import Dict, Hashable, Mapping
 import numpy as np
 
 from monai.config import KeysCollection
-from monai.transforms.compose import MapTransform
+from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
 
 
-class ScaleIntensityViaDicomd(MapTransform):
+class ScaleIntensityByDicomInfod(MapTransform):
     """
     Apply DICOM win WL to scaling to the whole numpy array.
     Scaling from [win_center-win_width/2, win_center+win_width/2] to [b_min, b_max] with clip option.
@@ -81,6 +81,23 @@ class MaskIntensityExd(MapTransform):
         return d
 
 
+class RandLocalPixelShuffled(MapTransform, Randomizable):
+    def __init__(self, keys: KeysCollection):
+        raise NotImplementedError
+class RandImageInpaintingd(MapTransform, Randomizable):
+    def __init__(self, keys: KeysCollection):
+        raise NotImplementedError
+class RandImageOutpaintingd(MapTransform, Randomizable):
+    def __init__(self, keys: KeysCollection):
+        raise NotImplementedError
+class RandNonlineard(MapTransform, Randomizable):
+    def __init__(self, keys: KeysCollection):
+        raise NotImplementedError
 
-ScaleIntensityViaDicomD = ScaleIntensityViaDicomDict = ScaleIntensityViaDicomd
+
+ScaleIntensityByDicomInfoD = ScaleIntensityByDicomInfoDict = ScaleIntensityByDicomInfod
 MaskIntensityExD = MaskIntensityExDict = MaskIntensityExd
+RandLocalPixelShuffleD = RandLocalPixelShuffleDict = RandLocalPixelShuffled
+RandImageInpaintingD = RandImageInpaintingDict = RandImageInpaintingd
+RandImageOutpaintingD = RandImageOutpaintingDict = RandImageOutpaintingd
+RandNonlinearD = RandNonlinearDict = RandNonlineard
