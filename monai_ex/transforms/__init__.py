@@ -12,9 +12,9 @@ from .register import LOADER, CHANNELER, ORIENTER, RESCALER, RESIZER, CROPADER, 
 LOADER.register('LoadImage', LoadImageD)
 LOADER.register('LoadNifti', LoadNiftiD)
 LOADER.register('LoadPNG', LoadPNGExD)
-LOADER.register('LoadNpy', LoadNumpyD)
+LOADER.register('LoadNPY', LoadNumpyD)
 
-CHANNELER.register('AddChannelFirst', AddChannelD)
+CHANNELER.register('AddChannel', AddChannelD)
 CHANNELER.register('AsChannelFirst', AsChannelFirstD)
 CHANNELER.register('AsChannelLast', AsChannelLastD)
 CHANNELER.register('RepeatChannel', RepeatChannelD)
