@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional, Sequence, Union
 
 import numpy as np
 
-from monai.transforms.compose import Randomizable
+from monai.transforms.compose import Randomizable, Compose
 from monai.transforms.utils import apply_transform
 from monai.utils import ensure_tuple, get_seed
 
@@ -36,3 +36,15 @@ class RandomSelect(Randomizable):
             return input_
 
         return apply_transform(self.selected_trans, input_)
+
+
+class ComposeEx(Compose):
+    def __init__(self, transforms: Optional[Union[Sequence[Callable], Callable]] = None) -> None:
+        super(ComposeEx, self).__init__(
+            transforms=transforms
+        )
+    
+    def add_transforms(self, transforms: Optional[Union[Sequence[Callable], Callable]]) -> None:
+        self.transforms += ensure_tuple(transforms)
+    
+    

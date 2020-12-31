@@ -6,6 +6,7 @@ import numpy as np
 from monai.data import NiftiSaver, PNGSaver
 from monai.utils import GridSampleMode, GridSamplePadMode, InterpolateMode, exact_version, optional_import
 from monai.handlers import SegmentationSaver
+from monai_ex.data import NiftiSaverEx
 
 Events, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Events")
 if TYPE_CHECKING:
@@ -16,7 +17,11 @@ else:
 
 class SegmentationSaverEx(SegmentationSaver):
     """
-    Event handler triggered on completing every iteration to save the segmentation predictions into files.
+    Extension of MONAI's SegmentationSaver
+    Extended: output_name_uplevel
+
+    Event handler triggered on completing every iteration
+    to save the segmentation predictions into files.
     """
 
     def __init__(
@@ -35,9 +40,6 @@ class SegmentationSaverEx(SegmentationSaver):
         name: Optional[str] = None,
     ) -> None:
         """
-        Extension of MONAI's SegmentationSaver
-        Extended: output_name_uplevel
-
         Args:
             output_dir: output image directory.
             output_postfix: a string appended to all output file names.
@@ -76,7 +78,7 @@ class SegmentationSaverEx(SegmentationSaver):
         """
         self.saver: Union[NiftiSaver, PNGSaver]
         if output_ext in (".nii.gz", ".nii"):
-            self.saver = NiftiSaver(
+            self.saver = NiftiSaverEx(
                 output_dir=output_dir,
                 output_postfix=output_postfix,
                 output_ext=output_ext,

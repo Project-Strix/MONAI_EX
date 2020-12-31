@@ -93,21 +93,6 @@ class FixedResize(Transform):
         return resized
 
 
-# class Transpose(Transform):
-#     def __init__(
-#             self,
-#             axes=None
-#     ) -> None:
-#         """
-#             Reverse or permute the axes of an array; returns the modified array.
-
-#         """
-#         self.axes = axes
-    
-#     def __call__(self, img: np.ndarray) -> np.ndarray:
-#         return np.transpose(img, axes=self.axes).astype(img.dtype)
-
-
 class LabelMorphology(Transform):
     def __init__(self, 
                  mode: str,
