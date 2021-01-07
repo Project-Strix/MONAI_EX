@@ -131,7 +131,7 @@ class LabelMorphology(Transform):
             structure = ndi.generate_binary_structure(3, 1)
         else:
             raise ValueError('Currently only support 2D&3D data')
-        
+
         channel_dim = None
         if input_ndim != img.ndim:
             channel_dim = img.shape.index(1)

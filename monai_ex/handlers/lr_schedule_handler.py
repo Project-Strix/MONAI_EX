@@ -44,5 +44,6 @@ class LrScheduleTensorboardHandler(LrScheduleHandler):
             if self.print_lr:
                 self.logger.info(f"Current learning rate: {self.lr_scheduler._last_lr[0]}")
             if self.writer is not None:
-                self.writer.add_scalar("Learning_rate", self.lr_scheduler._last_lr[0], engine.state.iteration)
+                self.writer.add_scalar("Learning_rate", self.lr_scheduler._last_lr[0], engine.state.epoch)
+
 
