@@ -17,6 +17,22 @@ from monai.transforms.utils import rescale_array
 from monai.utils import dtype_torch_to_numpy, ensure_tuple_size
 
 
+class ClipIntensity(Transform):
+    """Clip intensity by given range
+
+    Args:
+        cmin (float): intensity target range min.
+        cmax (float): intensity target range max.
+    """
+    def __init__(self, cmin: float, cmax: float) -> None:
+        self.cmin = cmin
+        self.cmax = cmax
+
+    def __call__(self, img: np.ndarray) -> np.ndarray:
+        img = np.clip(img, self.cmin, self.cmax)
+        return img
+        
+
 class RandLocalPixelShuffle(Randomizable, Transform):
     def __init__(self, prob: float = 0.5, num_block_range: Union[Sequence[int], int] = [50,200]):
         self.num_block_range = (num_block_range,num_block_range+1) if isinstance(num_block_range, int) else num_block_range

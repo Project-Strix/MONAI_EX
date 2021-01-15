@@ -14,6 +14,9 @@ def save_roc_curve_fn(y_preds, y_targets, save_dir):
     auc = roc_auc_compute_fn(y_preds, y_targets)
 
     fig = plt.figure(figsize=(8, 5), dpi=200)
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.serif'] = ['Times New Roman'] + plt.rcParams['font.serif']
+    plt.rcParams['font.size'] = 16
     plt.plot(fpr, tpr, label=f'Test AUC={auc:.2f}')
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False positive rate')

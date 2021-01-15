@@ -11,6 +11,7 @@ import numpy as np
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
+from monai_ex.transforms.intensity.array import ClipIntensity
 
 
 class ScaleIntensityByDicomInfod(MapTransform):
@@ -81,6 +82,22 @@ class MaskIntensityExd(MapTransform):
         return d
 
 
+class ClipIntensityd(MapTransform):
+    """Dictionary-based wrapper of :py:class:`monai_ex.transforms.ScaleIntensityRange`.
+
+    Args:
+        MapTransform ([type]): [description]
+    """
+    def __init__(self, keys, cmin: float, cmax: float):
+        super().__init__(keys)
+        self.clipper = ClipIntensity(cmin, cmax)
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            d[key] = self.clipper(d[key])
+        return d
+
 class RandLocalPixelShuffled(MapTransform, Randomizable):
     def __init__(self, keys: KeysCollection):
         raise NotImplementedError
@@ -101,3 +118,4 @@ RandLocalPixelShuffleD = RandLocalPixelShuffleDict = RandLocalPixelShuffled
 RandImageInpaintingD = RandImageInpaintingDict = RandImageInpaintingd
 RandImageOutpaintingD = RandImageOutpaintingDict = RandImageOutpaintingd
 RandNonlinearD = RandNonlinearDict = RandNonlineard
+ClipIntensityD = ClipIntensityDict = ClipIntensityd

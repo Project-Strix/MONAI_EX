@@ -29,6 +29,7 @@ RESCALER.register('ScaleIntensity', ScaleIntensityD)
 RESCALER.register('ScaleIntensityRange', ScaleIntensityRangeD)
 RESCALER.register('ScaleIntensityRangePercentiles', ScaleIntensityRangePercentilesD)
 RESCALER.register('ScaleIntensityByDicomInfo', ScaleIntensityByDicomInfoD)
+RESCALER.register('ClipIntensity', ClipIntensityD)
 
 RESIZER.register('Spacing', SpacingD)
 RESIZER.register('Resize', ResizeD)
