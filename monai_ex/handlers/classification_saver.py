@@ -1,9 +1,10 @@
+import os
 import logging
 import torch
 from typing import TYPE_CHECKING, Callable, Optional, Union, Dict
 import numpy as np
 
-from monai.data import CSVSaver 
+from monai.data import CSVSaver, NiftiSaver
 from monai.utils import exact_version, optional_import
 from monai.handlers.classification_saver import ClassificationSaver
 
@@ -45,11 +46,17 @@ class CSVSaverEx(CSVSaver):
 
         self._cache_dict[save_key] = data.astype(np.float32)
 
-    def save_batch(self, batch_data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None) -> None:
+    def save_batch(
+        self,
+        batch_data: Union[torch.Tensor, np.ndarray],
+        labels: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        meta_data: Optional[Dict] = None
+    ) -> None:
         """Save a batch of data into the cache dictionary.
 
         Args:
             batch_data: target batch data content that save into cache.
+            labels: output ground-truth labels if exists.
             meta_data: every key-value in the meta_data is corresponding to 1 batch of data.
 
         """
@@ -67,7 +74,7 @@ class ClassificationSaverEx(ClassificationSaver):
         output_dir: str = "./",
         filename: str = "predictions.csv",
         overwrite: bool = True,
-        save_y: bool = False,
+        save_errors: bool = False,
         batch_transform: Callable = lambda x: x,
         output_transform: Callable = lambda x: x,
         name: Optional[str] = None,
@@ -96,7 +103,19 @@ class ClassificationSaverEx(ClassificationSaver):
             name=name,
         )
         self.saver = CSVSaverEx(output_dir, filename, overwrite)
-        self.save_y = save_y
+        self.save_errors = save_errors
+        if self.save_errors:
+            self.FP_dir = os.path.join(output_dir, 'FP')
+            self.FN_dir = os.path.join(output_dir, 'FN')
+            os.makedirs(self.FP_dir, exist_ok=True)
+            os.makedirs(self.FN_dir, exist_ok=True)
+            self.fp_saver = NiftiSaver(
+                output_dir=self.FP_dir, output_postfix='', resample=False
+            )
+            self.fn_saver = NiftiSaver(
+                output_dir=self.FN_dir, output_postfix='', resample=False
+            )
+
 
     def __call__(self, engine: Engine) -> None:
         """
@@ -105,8 +124,19 @@ class ClassificationSaverEx(ClassificationSaver):
         Args:
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
-        meta_data = self.batch_transform(engine.state.batch)
+        if self.save_errors:
+            meta_data, image, labels = self.batch_transform(engine.state.batch)
+        else:
+            meta_data = self.batch_transform(engine.state.batch)
+            labels = None
+
         engine_output = self.output_transform(engine.state.output)
-        if self.save_y:
-            pass
-        self.saver.save_batch(engine_output, meta_data)
+        if self.save_errors:
+            y = int(labels.detach().cpu().numpy()) if torch.is_tensor(labels) else int(y)
+            o = int(engine_output.detach().cpu().numpy()) if torch.is_tensor(engine_output) else int(engine_output)
+            if y > 0 and y != o:
+                self.fn_saver.save_batch(image.detach().cpu().numpy(), meta_data)
+            elif y == 0 and y != o:
+                self.fp_saver.save_batch(image.detach().cpu().numpy(), meta_data)
+
+        self.saver.save_batch(engine_output, labels, meta_data)

@@ -28,12 +28,12 @@ class ScaleIntensityByDicomInfod(MapTransform):
     """
 
     def __init__(
-        self, 
-        keys: KeysCollection, 
-        win_center_key: str, 
-        win_width_key: str, 
-        b_min: float = 0, 
-        b_max: float = 1, 
+        self,
+        keys: KeysCollection,
+        win_center_key: str,
+        win_width_key: str,
+        b_min: float = 0,
+        b_max: float = 1,
         clip: bool = False
     ) -> None:
         super().__init__(keys)
@@ -69,7 +69,7 @@ class MaskIntensityExd(MapTransform):
 
     """
 
-    def __init__(self, keys: KeysCollection, mask_key: KeysCollection) -> None:
+    def __init__(self, keys: KeysCollection, mask_key: KeysCollection, fill_mode='zero') -> None:
         super().__init__(keys)
         self.mask_key = mask_key
         self.converter = MaskIntensity(mask_data=np.array([]))

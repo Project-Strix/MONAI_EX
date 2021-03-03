@@ -85,10 +85,10 @@ DEFAULT_TAG = "Loss"
 #     writer.add_image(tag + '_x', segmentation_overlay_x)
 #     writer.add_image(tag + '_y', segmentation_overlay_y)
 #     writer.add_image(tag + '_z', segmentation_overlay_z)
-  
+
 
 class TensorBoardImageHandlerEx(TensorBoardImageHandler):
-    def __init__(        
+    def __init__(
         self,
         summary_writer = None,
         log_dir: str = "./runs",
@@ -101,7 +101,8 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         max_channels: int = 1,
         max_frames: int = 64,
         prefix_name: str = '',
-        overlap=False):
+        overlap=False
+    ):
         super().__init__(
             summary_writer=summary_writer,
             log_dir=log_dir,
@@ -117,7 +118,7 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         self.prefix_name = prefix_name
         self.overlap = overlap
         assert self.overlap is False, 'Not implemented'
-    
+
     def __call__(self, engine: Engine):
         step = self.global_iter_transform(engine.state.epoch if self.epoch_level else engine.state.iteration)
         show_images = self.batch_transform(engine.state.batch)[0]

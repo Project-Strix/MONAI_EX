@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 from monai.utils.misc import issequenceiterable
 
 
@@ -10,6 +10,20 @@ def ensure_list(vals: Any):
         vals = [vals,]
 
     return list(vals)
+
+def ensure_list_rep(vals: Any, dim: int) -> List[Any]:
+    """
+    Returns a copy of `tup` with `dim` values by either shortened or duplicated input.
+
+    Raises:
+        ValueError: When ``tup`` is a sequence and ``tup`` length is not ``dim``.
+    """
+    if not issequenceiterable(vals):
+        return [vals,] * dim
+    elif len(vals) == dim:
+        return list(vals)
+
+    raise ValueError(f"Sequence must have length {dim}, got {len(vals)}.")
 
 def _register_generic(module_dict, module_name, module):
     assert module_name not in module_dict
