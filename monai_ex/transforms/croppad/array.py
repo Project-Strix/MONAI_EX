@@ -6,7 +6,7 @@ import torch
 from monai.config import IndexSelection
 from monai.data.utils import get_random_patch, get_valid_patch_size
 from monai_ex.utils import ensure_list, ensure_tuple_rep
-from monai.transforms import Randomizable, Transform, SpatialCrop
+from monai.transforms import Randomizable, Transform, SpatialCrop, ResizeWithPadOrCrop
 from monai.transforms.utils import (
     generate_pos_neg_label_crop_centers,
     generate_spatial_bounding_box,
@@ -72,7 +72,6 @@ class CenterMask2DSliceCrop(Transform):
             starts, ends = generate_spatial_bounding_box(np.take(mask_data_, z_index, self.z_axis)[np.newaxis,...], lambda x:x>0)
             centers = [(st+ed)//2 for st, ed in zip(starts, ends)]
             centers.insert(self.z_axis, z_index)
-            print('z_index:', z_index, 'axes:', axes, 'mask shape:', mask_data_.shape, 'center:', centers)
             return centers
 
     def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None):
@@ -100,12 +99,18 @@ class CenterMask2DSliceCrop(Transform):
         if self.crop_mode in ['single', 'parallel']:
             size_ = self.get_new_spatial_size()
             slice_ = SpatialCrop(roi_center=center, roi_size=size_)(img)
+            if np.any(slice_.shape[1:] != size_):
+                slice_ = ResizeWithPadOrCrop(spatial_size=size_)(slice_)
+
             return np.moveaxis(slice_.squeeze(0), self.z_axis, 0)
         else:
             cross_slices = np.zeros(shape=(3,)+self.roi_size)
             for k in range(3):
                 size_ = np.insert(self.roi_size, k, 1)
                 slice_ = SpatialCrop(roi_center=center, roi_size=size_)(img)
+                if np.any(slice_.shape[1:] != size_):
+                    slice_ = ResizeWithPadOrCrop(spatial_size=size_)(slice_)
+                
                 cross_slices[k] = slice_.squeeze()
             return cross_slices        
 

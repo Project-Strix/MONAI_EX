@@ -9,6 +9,9 @@ from .spatial.array import *
 from .spatial.dictionary import *
 from .croppad.array import *
 from .croppad.dictionary import *
+from .utility.array import *
+from .utility.dictionary import *
+
 from .register import LOADER, CHANNELER, ORIENTER, RESCALER, RESIZER, CROPADER, AUGMENTOR, UTILS
 
 LOADER.register('LoadImage', LoadImageD)

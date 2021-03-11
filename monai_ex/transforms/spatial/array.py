@@ -3,7 +3,7 @@ A collection of "vanilla" transforms for spatial operations
 https://github.com/Project-MONAI/MONAI/wiki/MONAI_Design
 """
 
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, Tuple
 
 import numpy as np
 import torch
@@ -168,3 +168,36 @@ class LabelMorphology(Transform):
             return np.expand_dims(img, axis=channel_dim)
         else:
             return img
+
+
+class Rotate90Ex(Transform):
+    """
+    Extension of :py:class:`monai.transforms.Rotate90`.
+    Add torch.tensor data support
+
+    Rotate an array by 90 degrees in the plane specified by `axes`.
+    """
+
+    def __init__(self, k: int = 1, spatial_axes: Tuple[int, int] = (0, 1)) -> None:
+        """
+        Args:
+            k: number of times to rotate by 90 degrees.
+            spatial_axes: 2 int numbers, defines the plane to rotate with 2 spatial axes.
+                Default: (0, 1), this is the first two axis in spatial dimensions.
+        """
+        self.k = k
+        self.spatial_axes = spatial_axes
+
+    def __call__(self, img: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
+        """
+        Args:
+            img: channel first array, must have shape: (num_channels, H[, W, ..., ]),
+        """
+        rotated = list()
+        for channel in img:
+            rotated.append(np.rot90(channel, self.k, self.spatial_axes))
+        
+        if isinstance(img, np.ndarray):
+            return np.stack(rotated).astype(img.dtype)
+        else:
+            return np.stack(rotated)

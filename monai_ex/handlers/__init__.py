@@ -4,5 +4,5 @@ from .checkpoint_saver import CheckpointSaverEx
 from .lr_schedule_handler import LrScheduleTensorboardHandler
 from .segmentation_saver import SegmentationSaverEx
 from .tensorboard_handlers import TensorBoardImageHandlerEx, TensorboardGraphHandler
-from .classification_saver import ClassificationSaverEx
+from .classification_saver import ClassificationSaverEx, CSVSaverEx
 

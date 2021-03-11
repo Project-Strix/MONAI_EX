@@ -15,13 +15,13 @@ defined in :py:class:`monai.transforms.spatial.array`.
 Class names are ended with 'd' to denote dictionary-based transforms.
 """
 
-from typing import Dict, Hashable, Mapping, Optional, Sequence, Union
+from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, Tuple, Any
 
 import numpy as np
 
 from monai.config import KeysCollection
-from monai.transforms.compose import MapTransform
-from monai_ex.transforms.spatial.array import FixedResize, LabelMorphology
+from monai.transforms.compose import MapTransform, Randomizable
+from monai_ex.transforms.spatial.array import FixedResize, LabelMorphology, Rotate90Ex
 
 from monai.utils import (
     GridSampleMode,
@@ -89,5 +89,58 @@ class LabelMorphologyd(MapTransform):
             d[key] = self.converter(d[key], mode=self.mode[idx], radius=self.radius[idx], binary=self.binary[idx])
         return d
 
+
+class RandRotate90Exd(Randomizable, MapTransform):
+    """
+    Dictionary-based version :py:class:`monai_ex.transforms.RandRotate90ex`.
+    With probability `prob`, input arrays are rotated by 90 degrees
+    in the plane specified by `spatial_axes`.
+    """
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        prob: float = 0.1,
+        max_k: int = 3,
+        spatial_axes: Tuple[int, int] = (0, 1),
+    ) -> None:
+        """
+        Args:
+            keys: keys of the corresponding items to be transformed.
+                See also: :py:class:`monai.transforms.compose.MapTransform`
+            prob: probability of rotating.
+                (Default 0.1, with 10% probability it returns a rotated array.)
+            max_k: number of rotations will be sampled from `np.random.randint(max_k) + 1`.
+                (Default 3)
+            spatial_axes: 2 int numbers, defines the plane to rotate with 2 spatial axes.
+                Default: (0, 1), this is the first two axis in spatial dimensions.
+        """
+        super().__init__(keys)
+
+        self.prob = min(max(prob, 0.0), 1.0)
+        self.max_k = max_k
+        self.spatial_axes = spatial_axes
+
+        self._do_transform = False
+        self._rand_k = 0
+
+    def randomize(self, data: Optional[Any] = None) -> None:
+        self._rand_k = self.R.randint(self.max_k) + 1
+        self._do_transform = self.R.random() < self.prob
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Mapping[Hashable, np.ndarray]:
+        self.randomize()
+        if not self._do_transform:
+            return data
+
+        rotator = Rotate90Ex(self._rand_k, self.spatial_axes)
+        d = dict(data)
+        for key in self.keys:
+            d[key] = rotator(d[key])
+        return d
+
+
 FixedResizeD = FixedResizeDict = FixedResized
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
+RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
+

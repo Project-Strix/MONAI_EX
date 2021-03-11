@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import TYPE_CHECKING, Dict, Optional
 
 from monai.utils import exact_version, optional_import
@@ -109,6 +110,8 @@ class CheckpointSaverEx(CheckpointSaver):
             n_saved=n_saved
         )
         self.key_metric_save_after_epoch = key_metric_save_after_epoch
+        if self.key_metric_save_after_epoch > 0:
+            self.save_dir = os.path.join(self.save_dir, f'Models_after_{key_metric_save_after_epoch}epoch')
 
         class _DiskSaver(DiskSaver):
             """
@@ -194,6 +197,6 @@ class CheckpointSaverEx(CheckpointSaver):
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
         assert callable(self._key_metric_checkpoint), "Error: _key_metric_checkpoint function not specified."
+
         if engine.state.epoch > self.key_metric_save_after_epoch:
             self._key_metric_checkpoint(engine)
-

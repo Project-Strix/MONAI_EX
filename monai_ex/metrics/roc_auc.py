@@ -1,17 +1,33 @@
 import os
-import csv
+import json
 import numpy as np
 import matplotlib as mpl
+from numpy.lib.function_base import average
+from torch._C import FloatStorageBase
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 from functools import partial
 
 from ignite.metrics import EpochMetric, Metric
-from ignite.contrib.metrics.roc_auc import roc_auc_curve_compute_fn, roc_auc_compute_fn
+# from ignite.contrib.metrics.roc_auc import (
+#     roc_auc_curve_compute_fn,
+#     roc_auc_compute_fn
+# )
+from sklearn.metrics import (
+    roc_auc_score,
+    roc_curve,
+    accuracy_score,
+    precision_recall_fscore_support
+)
 
-def save_roc_curve_fn(y_preds, y_targets, save_dir):
-    fpr, tpr, thresholds = roc_auc_curve_compute_fn(y_preds, y_targets)
-    auc = roc_auc_compute_fn(y_preds, y_targets)
+def cutoff_youdens(fpr,tpr,thresholds):
+    scores = tpr-fpr
+    orders = sorted(zip(scores,thresholds, range(len(scores))))
+    return orders[-1][1], orders[-1][-1]
+
+def save_roc_curve_fn(y_preds, y_targets, save_dir, is_multilabel=False):
+    fpr, tpr, thresholds = roc_curve(y_targets.numpy(), y_preds.numpy())
+    auc = roc_auc_score(y_targets.numpy(), y_preds.numpy())
 
     fig = plt.figure(figsize=(8, 5), dpi=200)
     plt.rcParams['font.family'] = 'serif'
@@ -26,12 +42,28 @@ def save_roc_curve_fn(y_preds, y_targets, save_dir):
 
     np.savetxt(
         os.path.join(save_dir, 'roc_scores.csv'),
-        np.stack([fpr, tpr]).transpose(),
+        np.stack([thresholds, fpr, tpr]).transpose(),
         delimiter=',',
         fmt='%f',
-        header='FPR,TPR',
+        header='Threshold,FPR,TPR',
         comments=''
     )
+
+    average_type = 'binary' if not is_multilabel else None
+    best_th, best_idx = cutoff_youdens(fpr, tpr, thresholds)
+    precision, recall, f1, _ = precision_recall_fscore_support(y_targets.numpy(), y_preds.numpy()>best_th, average=average_type)
+    acc = accuracy_score(y_targets.numpy(), y_preds.numpy()>best_th)
+    print('Best precision, recall, f1:', precision, recall, f1)
+    with open(os.path.join(save_dir, 'classification_results.json'), 'w') as f:
+        json.dump( {
+            'Best threshold': float(best_th),
+            'Precision': float(precision),
+            'Recall': float(recall),
+            'Accuracy': float(acc),
+            'False positive rate': float(fpr[best_idx]),
+            'True positive rate': float(tpr[best_idx]),
+            'f1': float(f1),
+            }, f, indent=2 )
 
     return 0
 
@@ -46,11 +78,11 @@ class DrawRocCurve(EpochMetric):
         self,
         save_dir,
         output_transform=lambda x: x, 
-        check_compute_fn: bool = False
+        check_compute_fn: bool = False,
+        is_multilabel: bool = False
     ):
         super(DrawRocCurve, self).__init__(
-            partial(save_roc_curve_fn, save_dir=save_dir),
-            output_transform=output_transform, 
+            partial(save_roc_curve_fn, save_dir=save_dir, is_multilabel=is_multilabel),
+            output_transform=output_transform,
             check_compute_fn=check_compute_fn
         )
-
