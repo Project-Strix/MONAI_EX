@@ -1,18 +1,15 @@
 import os
 import json
 import numpy as np
+from functools import partial
 import matplotlib as mpl
-from numpy.lib.function_base import average
-from torch._C import FloatStorageBase
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-from functools import partial
 
-from ignite.metrics import EpochMetric, Metric
-# from ignite.contrib.metrics.roc_auc import (
-#     roc_auc_curve_compute_fn,
-#     roc_auc_compute_fn
-# )
+from monai.utils import exact_version, optional_import
+Metric, _ = optional_import("ignite.metrics", "0.4.2", exact_version, "Metric")
+EpochMetric, _ = optional_import("ignite.metrics", "0.4.2", exact_version, "EpochMetric")
+
 from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
@@ -20,10 +17,12 @@ from sklearn.metrics import (
     precision_recall_fscore_support
 )
 
-def cutoff_youdens(fpr,tpr,thresholds):
+
+def cutoff_youdens(fpr, tpr, thresholds):
     scores = tpr-fpr
     orders = sorted(zip(scores,thresholds, range(len(scores))))
     return orders[-1][1], orders[-1][-1]
+
 
 def save_roc_curve_fn(y_preds, y_targets, save_dir, is_multilabel=False):
     fpr, tpr, thresholds = roc_curve(y_targets.numpy(), y_preds.numpy())
@@ -56,6 +55,7 @@ def save_roc_curve_fn(y_preds, y_targets, save_dir, is_multilabel=False):
     print('Best precision, recall, f1:', precision, recall, f1)
     with open(os.path.join(save_dir, 'classification_results.json'), 'w') as f:
         json.dump( {
+            'AUC': float(auc),
             'Best threshold': float(best_th),
             'Precision': float(precision),
             'Recall': float(recall),

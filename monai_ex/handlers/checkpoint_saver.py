@@ -110,8 +110,8 @@ class CheckpointSaverEx(CheckpointSaver):
             n_saved=n_saved
         )
         self.key_metric_save_after_epoch = key_metric_save_after_epoch
-        if self.key_metric_save_after_epoch > 0:
-            self.save_dir = os.path.join(self.save_dir, f'Models_after_{key_metric_save_after_epoch}epoch')
+        suffix = f'_after_{key_metric_save_after_epoch}epoch' if self.key_metric_save_after_epoch > 0 else ''
+        self.save_dir = str(self.save_dir)+suffix
 
         class _DiskSaver(DiskSaver):
             """

@@ -4,14 +4,12 @@ import numpy as np
 import torch
 
 from monai.config import IndexSelection
-from monai.data.utils import get_random_patch, get_valid_patch_size
 from monai_ex.utils import ensure_list, ensure_tuple_rep
-from monai.transforms import Randomizable, Transform, SpatialCrop, ResizeWithPadOrCrop
-from monai.transforms.utils import (
-    generate_pos_neg_label_crop_centers,
-    generate_spatial_bounding_box,
-    map_binary_to_indices,
-    weighted_patch_samples,
+from monai.transforms.utils import generate_spatial_bounding_box
+from monai.transforms import (
+    Transform,
+    SpatialCrop,
+    ResizeWithPadOrCrop
 )
 
 
@@ -40,9 +38,9 @@ class CenterMask2DSliceCrop(Transform):
         self.z_axis = z_axis
         self.center_mode = center_mode
         if crop_mode not in ['single', 'cross', 'parallel']:
-            raise ValueError("Cropping mode must be one of 'single, cross, parallel'") 
+            raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
         if center_mode not in ['center', 'maximum']:
-            raise ValueError("Centering mode must be one of 'center, maximum'") 
+            raise ValueError("Centering mode must be one of 'center, maximum'")
 
     def get_new_spatial_size(self):
         spatial_size_ = ensure_list(self.roi_size)
