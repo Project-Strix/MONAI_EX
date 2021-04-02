@@ -50,6 +50,7 @@ class SiameseEvaluator(Evaluator):
         device: torch.device,
         val_data_loader: DataLoader,
         network: torch.nn.Module,
+        loss_function: Callable,
         epoch_length: Optional[int] = None,
         non_blocking: bool = False,
         prepare_batch: Callable = default_prepare_batch,
@@ -76,6 +77,7 @@ class SiameseEvaluator(Evaluator):
         )
 
         self.network = network
+        self.loss_function = loss_function
         self.inferer = SimpleInferer() if inferer is None else inferer
 
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -120,32 +122,43 @@ class SiameseEvaluator(Evaluator):
                     output1 = self.inferer(inputs1, self.network, *args, **kwargs)
                     output2 = self.inferer(inputs2, self.network, *args, **kwargs)
                     if len(output1) == 1:
-                        loss = self.loss_function(output1, output2, targets1, targets2)
+                        if self.loss_function:
+                            loss = self.loss_function(output1, output2, targets1, targets2).item()
+                        else:
+                            loss = 0
                     elif len(output1) == 2:  # Contrastive+CE
-                        loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2)
+                        if self.loss_function:
+                            loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2).item()
+                        else:loss = 0
                     else:
                         raise NotImplementedError(f'SiameseNet expected 1or2 outputs, but got {len(output1)}')
             else:
                 output1 = self.inferer(inputs1, self.network, *args, **kwargs)
                 output2 = self.inferer(inputs2, self.network, *args, **kwargs)
                 if len(output1) == 1:
-                    loss = self.loss_function(output1, output2, targets1, targets2)
+                    if self.loss_function:
+                        loss = self.loss_function(output1, output2, targets1, targets2).item()
+                    else:
+                        loss = 0
                 elif len(output1) == 2:  # Contrastive+CE
-                    loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2)
+                    if self.loss_function:
+                        loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2).item()
+                    else:
+                        loss = 0
                 else:
                     raise NotImplementedError(f'SiameseNet expected 1or2 outputs, but got {len(output1)}')
         if len(output1) == 1:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1, output2),
-                Keys.LOSS: loss.item()
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1, output2), dim=0),
+                Keys.LOSS: loss
             }
         elif len(output2) == 2:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1[0], output2[0]),
-                Keys.PRED: (output1[1], output2[1]),
-                Keys.LOSS: loss.item()
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1[0], output2[0]), dim=0),
+                Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
+                Keys.LOSS: loss
             }

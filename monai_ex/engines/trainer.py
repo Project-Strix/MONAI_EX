@@ -140,17 +140,17 @@ class SiameseTrainer(SupervisedTrainer):
 
         if isinstance(output1, tuple) and len(output1)==2:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1[0], output2[0]),
-                Keys.PRED: (output1[1], output2[1]),
+                Keys.IMAGE: torch.cat((inputs1,inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1,targets2), dim=0),
+                Keys.LATENT: torch.cat((output1[0],output2[0]), dim=0),
+                Keys.PRED: torch.cat((output1[1],output2[1]), dim=0),
                 Keys.LOSS: loss.item()
             }
         else:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1, output2),
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1, output2), dim=0),
                 Keys.LOSS: loss.item()
             }
 
