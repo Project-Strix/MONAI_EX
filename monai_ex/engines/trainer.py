@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from monai.engines.trainer import Trainer, SupervisedTrainer
 from monai.inferers import Inferer, SimpleInferer
-# from monai.engines.utils import CommonKeys as Keys
+from monai.transforms import apply_transform
 from monai_ex.engines.utils import default_prepare_batch_ex
 from monai_ex.engines.utils import CustomKeys as Keys
 from monai_ex.inferers import Inferer, UnifiedInferer
@@ -16,9 +16,10 @@ from monai.transforms import Transform
 from monai.utils import exact_version, optional_import
 
 if TYPE_CHECKING:
-    from ignite.engine import Engine
+    from ignite.engine import Engine, Events
     from ignite.metrics import Metric
 else:
+    Events, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Events")
     Engine, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Engine")
     Metric, _ = optional_import("ignite.metrics", "0.4.2", exact_version, "Metric")
 
@@ -61,12 +62,18 @@ class SiameseTrainer(SupervisedTrainer):
             prepare_batch=prepare_batch,
             iteration_update=iteration_update,
             inferer=inferer,
-            post_transform=post_transform,
+            post_transform=None,
             key_train_metric=key_train_metric,
             additional_metrics=additional_metrics,
             train_handlers=train_handlers,
             amp=amp,
         )
+        if post_transform is not None:
+            @self.on(Events.ITERATION_COMPLETED)
+            def run_post_transform(engine: Engine) -> None:
+                assert post_transform is not None
+                engine.state.output = apply_transform(post_transform, engine.state.output)
+
         # self.network = network
         # self.optimizer = optimizer
         # self.loss_function = loss_function
@@ -140,17 +147,17 @@ class SiameseTrainer(SupervisedTrainer):
 
         if isinstance(output1, tuple) and len(output1)==2:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1[0], output2[0]),
-                Keys.PRED: (output1[1], output2[1]),
+                Keys.IMAGE: torch.cat((inputs1,inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1[0], output2[0]), dim=0),
+                Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
                 Keys.LOSS: loss.item()
             }
         else:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1, output2),
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1, output2), dim=0),
                 Keys.LOSS: loss.item()
             }
 

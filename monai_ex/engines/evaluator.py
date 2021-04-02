@@ -50,6 +50,7 @@ class SiameseEvaluator(Evaluator):
         device: torch.device,
         val_data_loader: DataLoader,
         network: torch.nn.Module,
+        loss_function: Callable,
         epoch_length: Optional[int] = None,
         non_blocking: bool = False,
         prepare_batch: Callable = default_prepare_batch,
@@ -76,6 +77,7 @@ class SiameseEvaluator(Evaluator):
         )
 
         self.network = network
+        self.loss_function = loss_function
         self.inferer = SimpleInferer() if inferer is None else inferer
 
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -96,7 +98,7 @@ class SiameseEvaluator(Evaluator):
         """
         if batchdata is None:
             raise ValueError("Must provide batch data for current iteration.")
-        
+
         if len(batchdata) != 2:
             raise ValueError(f"len of batchdata should be 2, but got {len(batchdata)}")
 
@@ -136,16 +138,16 @@ class SiameseEvaluator(Evaluator):
                     raise NotImplementedError(f'SiameseNet expected 1or2 outputs, but got {len(output1)}')
         if len(output1) == 1:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1, output2),
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1, output2), dim=0),
                 Keys.LOSS: loss.item()
             }
         elif len(output2) == 2:
             return {
-                Keys.IMAGE: (inputs1, inputs2),
-                Keys.LABEL: (targets1, targets2),
-                Keys.LATENT: (output1[0], output2[0]),
-                Keys.PRED: (output1[1], output2[1]),
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
+                Keys.LABEL: torch.cat((targets1, targets2), dim=0),
+                Keys.LATENT: torch.cat((output1[0], output2[0]), dim=0),
+                Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
                 Keys.LOSS: loss.item()
             }
