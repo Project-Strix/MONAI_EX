@@ -30,6 +30,7 @@ class CenterMask2DSliceCrop(Transform):
         z_axis: int,
         center_mode: Optional[str]='center',
         mask_data: Optional[np.ndarray]=None,
+        n_slices: int = 3
     ) -> None:
         super().__init__()
         self.roi_size = ensure_tuple_rep(roi_size, 2)
@@ -37,6 +38,8 @@ class CenterMask2DSliceCrop(Transform):
         self.crop_mode = crop_mode
         self.z_axis = z_axis
         self.center_mode = center_mode
+        self.n_slices = 1 if crop_mode=='single' else n_slices
+
         if crop_mode not in ['single', 'cross', 'parallel']:
             raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
         if center_mode not in ['center', 'maximum']:
@@ -44,10 +47,8 @@ class CenterMask2DSliceCrop(Transform):
 
     def get_new_spatial_size(self):
         spatial_size_ = ensure_list(self.roi_size)
-        if self.crop_mode == 'single':
-            spatial_size_.insert(self.z_axis, 1)
-        elif self.crop_mode == 'parallel':
-            spatial_size_.insert(self.z_axis, 3)
+        if self.crop_mode in ['single', 'parallel']:
+            spatial_size_.insert(self.z_axis, self.n_slices)
         else:
             spatial_size_ = [max(spatial_size_),]*3
 
@@ -56,23 +57,22 @@ class CenterMask2DSliceCrop(Transform):
     def get_center_pos(self, mask_data):
         if self.center_mode == 'center':
             starts, ends = generate_spatial_bounding_box(mask_data, lambda x:x>0)
-            return [(st+ed)//2 for st, ed in zip(starts, ends)]
+            return tuple((st+ed)//2 for st, ed in zip(starts, ends))
         elif self.center_mode == 'maximum':
-            axes = list(range(3))
-            axes.remove(self.z_axis)
+            axes = np.delete(np.arange(3), self.z_axis)
             mask_data_ = mask_data.squeeze()
             z_index = np.argmax(np.count_nonzero(mask_data_, axis=tuple(axes)))
             if z_index == 0 and self.crop_mode == 'parallel':
-                z_index += 1
+                z_index = (self.n_slices-1)//2
             elif z_index == mask_data_.shape[self.z_axis]-1 and self.crop_mode == 'parallel':
-                z_index -= 1 
+                z_index -= (self.n_slices-1)//2
             
             starts, ends = generate_spatial_bounding_box(np.take(mask_data_, z_index, self.z_axis)[np.newaxis,...], lambda x:x>0)
             centers = [(st+ed)//2 for st, ed in zip(starts, ends)]
             centers.insert(self.z_axis, z_index)
-            return centers
+            return tuple(centers)
 
-    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None):
+    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None, center: Optional[tuple]=None):
         """
         Apply the transform to `img`, assuming `img` is channel-first and
         slicing doesn't apply to the channel dim.
@@ -91,8 +91,9 @@ class CenterMask2DSliceCrop(Transform):
                 "When mask_data is not single channel, mask_data channels must match img, "
                 f"got img={img.shape[0]} mask_data={mask_data_.shape[0]}."
             )
-    
-        center = self.get_center_pos(mask_data_)
+
+        if center is None:
+            center = self.get_center_pos(mask_data_)
 
         if self.crop_mode in ['single', 'parallel']:
             size_ = self.get_new_spatial_size()
@@ -110,5 +111,54 @@ class CenterMask2DSliceCrop(Transform):
                     slice_ = ResizeWithPadOrCrop(spatial_size=size_)(slice_)
                 
                 cross_slices[k] = slice_.squeeze()
-            return cross_slices        
+            return cross_slices
 
+
+class FullMask2DSliceCrop(CenterMask2DSliceCrop):
+    def __init__(
+        self,
+        roi_size: Union[Sequence[int], int],
+        crop_mode: str,
+        z_axis: int,
+        mask_data: Optional[np.ndarray]=None,
+        n_slices: int = 3
+    ):
+        super().__init__(
+            roi_size=roi_size,
+            crop_mode=crop_mode,
+            z_axis=z_axis,
+            mask_data=mask_data,
+            n_slices=n_slices
+        )
+    
+    def get_center_pos_(self, mask_data):
+        axes = np.delete(np.arange(3), self.z_axis)
+        starts, ends = generate_spatial_bounding_box(mask_data, lambda x:x>0)
+        z_start, z_end = starts[self.z_axis]+(self.n_slices-1)//2, ends[self.z_axis]-(self.n_slices-1)//2
+        centers = []
+        for z in np.arange(z_start, z_end):
+            center = [(st+ed)//2 for st, ed in zip(np.array(starts)[axes], np.array(ends)[axes])]
+            center.insert(self.z_axis, z)
+            centers.append(tuple(center))
+        
+        return centers
+    
+    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None):
+        if self.mask_data is None and msk is None:
+            raise ValueError("Unknown mask_data.")
+        mask_data_ = np.array([[1]])
+        if self.mask_data is not None and msk is None:
+            mask_data_ = self.mask_data > 0
+        if msk is not None:
+            mask_data_ = msk > 0
+        mask_data_ = np.asarray(mask_data_)
+
+        if mask_data_.shape[0] != 1 and mask_data_.shape[0] != img.shape[0]:
+            raise ValueError(
+                "When mask_data is not single channel, mask_data channels must match img, "
+                f"got img={img.shape[0]} mask_data={mask_data_.shape[0]}."
+            )
+
+        centers = self.get_center_pos_(mask_data_)
+        slices = [super(FullMask2DSliceCrop, self).__call__(img, msk, center) for center in centers]
+        return slices
