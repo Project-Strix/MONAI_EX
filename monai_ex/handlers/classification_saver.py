@@ -132,6 +132,7 @@ class ClassificationSaverEx(ClassificationSaver):
 
         engine_output = self.output_transform(engine.state.output)
         if self.save_errors:
+            raise NotImplementedError
             y = int(labels.detach().cpu().numpy()) if torch.is_tensor(labels) else int(y)
             o = int(engine_output.detach().cpu().numpy()) if torch.is_tensor(engine_output) else int(engine_output)
             if y > 0 and y != o:
