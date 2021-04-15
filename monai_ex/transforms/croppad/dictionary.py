@@ -5,7 +5,7 @@ import numpy as np
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform
 
-from monai_ex.transforms.croppad.array import CenterMask2DSliceCrop, FullMask2DSliceCrop
+from monai_ex.transforms.croppad.array import CenterMask2DSliceCrop, FullMask2DSliceCrop, GetMaxSlices3direcCrop
 
 
 class CenterMask2DSliceCropd(MapTransform):
@@ -73,6 +73,32 @@ class FullMask2DSliceCropd(MapTransform):
         
         return results
                 
+class GetMaxSlices3direcCropd(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        mask_key: KeysCollection,
+        roi_size: Union[Sequence[int], int],
+        crop_mode: str,
+        center_mode: str,
+        n_slices: int,
+    ) -> None:
+        super().__init__(keys)
+        self.mask_key = mask_key
+        self.cropper = GetMaxSlices3direcCrop(
+            roi_size=roi_size,
+            crop_mode=crop_mode,
+            center_mode=center_mode,
+            mask_data=None,
+            n_slices=n_slices,
+        )
+    
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for key in self.keys:
+            d[key] = self.cropper(d[key], d[self.mask_key])
+        return d
 
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
+GetMaxSlices3direcCropD = GetMaxSlices3direcCropDict = GetMaxSlices3direcCropd
