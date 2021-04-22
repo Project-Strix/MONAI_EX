@@ -36,6 +36,9 @@ def get_keys_list(keytype):
     key_names = keytype.__annotations__.keys()
     return [keytype.__dict__[k] for k in key_names]
 
+def get_keys_dict(keytype):
+    key_names = keytype.__annotations__.keys()
+    return {k:keytype.__dict__[k] for k in key_names}
 
 def default_prepare_batch_ex(
     batchdata: Dict[str, torch.Tensor]

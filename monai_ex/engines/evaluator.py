@@ -98,7 +98,7 @@ class SiameseEvaluator(Evaluator):
         """
         if batchdata is None:
             raise ValueError("Must provide batch data for current iteration.")
-        
+
         if len(batchdata) != 2:
             raise ValueError(f"len of batchdata should be 2, but got {len(batchdata)}")
 
@@ -152,7 +152,7 @@ class SiameseEvaluator(Evaluator):
                 Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
                 Keys.LABEL: torch.cat((targets1, targets2), dim=0),
                 Keys.LATENT: torch.cat((output1, output2), dim=0),
-                Keys.LOSS: loss
+                Keys.LOSS: loss.item()
             }
         elif len(output2) == 2:
             return {
@@ -160,5 +160,5 @@ class SiameseEvaluator(Evaluator):
                 Keys.LABEL: torch.cat((targets1, targets2), dim=0),
                 Keys.LATENT: torch.cat((output1[0], output2[0]), dim=0),
                 Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
-                Keys.LOSS: loss
+                Keys.LOSS: loss.item()
             }
