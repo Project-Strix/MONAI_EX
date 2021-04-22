@@ -7,8 +7,9 @@ from typing import Any, Callable, Optional, Sequence, Union
 import numpy as np
 
 from monai.transforms.compose import Randomizable, Compose
-from monai.transforms.utils import apply_transform
+from monai.transforms.transform import apply_transform
 from monai.utils import ensure_tuple, get_seed
+
 
 class RandomSelect(Randomizable):
     def __init__(self, transforms: Optional[Union[Sequence[Callable], Callable]] = None, prob: float = 0.5) -> None:
@@ -17,7 +18,7 @@ class RandomSelect(Randomizable):
         self.transforms = ensure_tuple(transforms)
         self.set_random_state(seed=get_seed())
         self.prob = prob
-    
+
     def set_random_state(self, seed: Optional[int] = None, state: Optional[np.random.RandomState] = None) -> "Compose":
         super().set_random_state(seed=seed, state=state)
         for _transform in self.transforms:
@@ -29,7 +30,7 @@ class RandomSelect(Randomizable):
     def randomize(self, data: Optional[Any] = None) -> None:
         self._do_transform = self.R.random() < self.prob
         self.selected_trans = self.R.choice(self.transforms)
-    
+
     def __call__(self, input_):
         self.randomize()
         if not self._do_transform:
@@ -43,8 +44,6 @@ class ComposeEx(Compose):
         super(ComposeEx, self).__init__(
             transforms=transforms
         )
-    
+
     def add_transforms(self, transforms: Optional[Union[Sequence[Callable], Callable]]) -> None:
         self.transforms += ensure_tuple(transforms)
-    
-    

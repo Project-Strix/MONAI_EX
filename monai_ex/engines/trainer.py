@@ -19,9 +19,9 @@ if TYPE_CHECKING:
     from ignite.engine import Engine, Events
     from ignite.metrics import Metric
 else:
-    Events, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Events")
-    Engine, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Engine")
-    Metric, _ = optional_import("ignite.metrics", "0.4.2", exact_version, "Metric")
+    Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
+    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
+    Metric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "Metric")
 
 
 class SiameseTrainer(SupervisedTrainer):

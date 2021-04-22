@@ -7,8 +7,8 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 
 from monai.utils import exact_version, optional_import
-Metric, _ = optional_import("ignite.metrics", "0.4.2", exact_version, "Metric")
-EpochMetric, _ = optional_import("ignite.metrics", "0.4.2", exact_version, "EpochMetric")
+Metric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "Metric")
+EpochMetric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "EpochMetric")
 
 from sklearn.metrics import (
     roc_auc_score,

@@ -1,9 +1,9 @@
 import warnings
-from typing import  Any, Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from monai.data import Dataset
 from monai.transforms import Randomizable
-from monai.transforms.utils import apply_transform
+from monai.transforms.transform import apply_transform
 
 
 class SplitDataset(Randomizable, Dataset):
@@ -29,7 +29,7 @@ class SplitDataset(Randomizable, Dataset):
 
     def __len__(self) -> int:
         return len(self.data)//2
-    
+
     def randomize(self, data: Optional[Any] = None) -> None:
         try:
             self.R.shuffle(data)
@@ -39,12 +39,12 @@ class SplitDataset(Randomizable, Dataset):
     def __getitem__(self, index: int):
         if self.shuffle:
             self.randomize(self.data)
-        
+
         data1 = self.data[index]
         data2 = self.data[index+self.__len__()]
 
         if self.transform is not None:
             data1 = apply_transform(self.transform, data1)
             data2 = apply_transform(self.transform, data2)
-        
+
         return (data1, data2)
