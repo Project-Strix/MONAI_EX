@@ -205,3 +205,51 @@ class GetMaxSlices3direcCrop(CenterMask2DSliceCrop):
             slices = super(GetMaxSlices3direcCrop, self).__call__(img, msk, z_axis=z_axis)
             final_slices = np.concatenate([final_slices, slices])
         return final_slices
+
+
+class FullImage2DSliceCrop(CenterMask2DSliceCrop):
+    def __init__(
+        self,
+        roi_size: Union[Sequence[int], int],
+        crop_mode: str,
+        z_axis: int,
+        n_slices: int = 3
+    ):
+        super().__init__(
+            roi_size=roi_size,
+            crop_mode=crop_mode,
+            z_axis=z_axis,
+            mask_data=None,
+            n_slices=n_slices
+        )
+    
+    def get_center_pos_(self, img):
+        axes = np.delete(np.arange(3), self.z_axis)
+        starts = [0, 0, 0]
+        ends = [img.shape[1], img.shape[2], img.shape[3]]
+        centers = []
+        for z in np.arange(0, img.shape[3]):
+            center = [(st+ed)//2 for st, ed in zip(np.array(starts)[axes], np.array(ends)[axes])]
+            center.insert(self.z_axis, z)
+            centers.append(tuple(center))
+        return centers
+    
+    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None):
+        if self.mask_data is None and msk is None:
+            raise ValueError("Unknown mask_data.")
+        mask_data_ = np.array([[1]])
+        if self.mask_data is not None and msk is None:
+            mask_data_ = self.mask_data > 0
+        if msk is not None:
+            mask_data_ = msk > 0
+        mask_data_ = np.asarray(mask_data_)
+
+        if mask_data_.shape[0] != 1 and mask_data_.shape[0] != img.shape[0]:
+            raise ValueError(
+                "When mask_data is not single channel, mask_data channels must match img, "
+                f"got img={img.shape[0]} mask_data={mask_data_.shape[0]}."
+            )
+
+        centers = self.get_center_pos_(mask_data_)
+        slices = [super(FullImage2DSliceCrop, self).__call__(img, msk, center) for center in centers]
+        return slices

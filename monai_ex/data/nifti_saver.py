@@ -103,6 +103,7 @@ class NiftiSaverEx(NiftiSaver):
             data = np.expand_dims(data, -1)
         # change data to "channel last" format and write to nifti format file
         data = np.moveaxis(data, 0, -1)
+        
         write_nifti(
             data,
             file_name=filename,
