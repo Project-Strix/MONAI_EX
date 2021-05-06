@@ -68,7 +68,7 @@ class FixedResize(Transform):
             )
         assert np.count_nonzero(np.greater(self.spatial_size, 0)) == 1, \
                 f"Spatial_size should have only one value > 0, but got {self.spatial_size}"
-        
+
         if isinstance(self.spatial_size, int):
             spatial_size_ = (self.spatial_size, ) * (img.ndim - 1)
         else:
@@ -94,10 +94,12 @@ class FixedResize(Transform):
 
 
 class LabelMorphology(Transform):
-    def __init__(self, 
-                 mode: str,
-                 radius: int,
-                 binary: bool):
+    def __init__(
+        self,
+        mode: str,
+        radius: int,
+        binary: bool
+    ):
         """
         Args:
             mode: morphology mode, e.g. 'closing', 'dilation', 'erosion', 'opening'
@@ -111,11 +113,13 @@ class LabelMorphology(Transform):
         assert self.mode in ['closing', 'dilation', 'erosion', 'opening'], \
             f"Mode must be one of 'closing', 'dilation', 'erosion', 'opening', but got {self.mode}"
 
-    def __call__(self, 
-                 img: np.ndarray, 
-                 mode: Optional[str]=None,
-                 radius: Optional[int]=None,
-                 binary: Optional[bool]=None) -> np.ndarray:
+    def __call__(
+        self,
+        img: np.ndarray,
+        mode: Optional[str] = None,
+        radius: Optional[int] = None,
+        binary: Optional[bool] = None
+    ) -> np.ndarray:
         """
         Apply the transform to `img`.
 
@@ -163,7 +167,7 @@ class LabelMorphology(Transform):
                     img = ndi.grey_opening(img, footprint=structure)
         else:
             raise ValueError(f'Unexpected keyword {self.mode}')
-        
+
         if channel_dim is not None:
             return np.expand_dims(img, axis=channel_dim)
         else:
@@ -196,7 +200,7 @@ class Rotate90Ex(Transform):
         rotated = list()
         for channel in img:
             rotated.append(np.rot90(channel, self.k, self.spatial_axes))
-        
+
         if isinstance(img, np.ndarray):
             return np.stack(rotated).astype(img.dtype)
         else:
