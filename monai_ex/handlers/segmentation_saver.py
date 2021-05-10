@@ -18,7 +18,7 @@ else:
 class SegmentationSaverEx(SegmentationSaver):
     """
     Extension of MONAI's SegmentationSaver
-    Extended: output_name_uplevel
+    Extended: data_rootdir_parent
 
     Event handler triggered on completing every iteration
     to save the segmentation predictions into files.
@@ -29,7 +29,7 @@ class SegmentationSaverEx(SegmentationSaver):
         output_dir: str = "./",
         output_postfix: str = "seg",
         output_ext: str = ".nii.gz",
-        output_name_uplevel: int = 0,
+        data_rootdir_parent: int = 0,
         resample: bool = True,
         mode: Union[GridSampleMode, InterpolateMode, str] = "nearest",
         padding_mode: Union[GridSamplePadMode, str] = GridSamplePadMode.BORDER,
@@ -82,7 +82,7 @@ class SegmentationSaverEx(SegmentationSaver):
                 output_dir=output_dir,
                 output_postfix=output_postfix,
                 output_ext=output_ext,
-                output_name_uplevel=output_name_uplevel,
+                data_rootdir_parent=data_rootdir_parent,
                 resample=resample,
                 mode=GridSampleMode(mode),
                 padding_mode=padding_mode,
