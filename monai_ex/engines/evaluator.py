@@ -1,21 +1,23 @@
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Callable, Tuple, Dict, Optional, Sequence, Union, Iterable, List
 
 import torch
 from torch.utils.data import DataLoader
 
 from monai_ex.engines.utils import CustomKeys as Keys
-from monai.engines.utils import default_prepare_batch
-from monai.engines import Evaluator
+from monai_ex.engines.utils import default_prepare_batch_ex
+from monai.engines import Evaluator, SupervisedEvaluator
+from monai.engines.utils import IterationEvents
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import Transform
-from monai.utils import ensure_tuple, exact_version, optional_import
+from monai.utils import ForwardMode, ensure_tuple, exact_version, optional_import
 
 if TYPE_CHECKING:
-    from ignite.engine import Engine
+    from ignite.engine import Engine, EventEnum
     from ignite.metrics import Metric
 else:
     Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
     Metric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "Metric")
+    EventEnum, _ = optional_import("ignite.engine", "0.4.4", exact_version, "EventEnum")
 
 
 class SiameseEvaluator(Evaluator):
@@ -53,7 +55,7 @@ class SiameseEvaluator(Evaluator):
         loss_function: Callable,
         epoch_length: Optional[int] = None,
         non_blocking: bool = False,
-        prepare_batch: Callable = default_prepare_batch,
+        prepare_batch: Callable = default_prepare_batch_ex,
         iteration_update: Optional[Callable] = None,
         inferer: Optional[Inferer] = None,
         post_transform: Optional[Transform] = None,
@@ -162,3 +164,77 @@ class SiameseEvaluator(Evaluator):
                 Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
                 Keys.LOSS: loss.item()
             }
+
+
+class SupervisedEvaluatorEx(SupervisedEvaluator):
+    """Extension of MONAI's SupervisedEvaluator.
+    Extended: custom_keys.
+
+    """
+    def __init__(
+        self,
+        device: torch.device,
+        val_data_loader: Union[Iterable, DataLoader],
+        network: torch.nn.Module,
+        epoch_length: Optional[int] = None,
+        non_blocking: bool = False,
+        prepare_batch: Callable = default_prepare_batch_ex,
+        iteration_update: Optional[Callable] = None,
+        inferer: Optional[Inferer] = None,
+        post_transform: Optional[Transform] = None,
+        key_val_metric: Optional[Dict[str, Metric]] = None,
+        additional_metrics: Optional[Dict[str, Metric]] = None,
+        val_handlers: Optional[Sequence] = None,
+        amp: bool = False,
+        mode: Union[ForwardMode, str] = ForwardMode.EVAL,
+        event_names: Optional[List[Union[str, EventEnum]]] = None,
+        event_to_attr: Optional[dict] = None,
+        custom_keys: Optional[dict] = None,
+    ) -> None:
+        super().__init__(
+            device,
+            val_data_loader,
+            network,
+            epoch_length,
+            non_blocking,
+            prepare_batch,
+            iteration_update,
+            inferer,
+            post_transform,
+            key_val_metric,
+            additional_metrics,
+            val_handlers,
+            amp,
+            mode,
+            event_names,
+            event_to_attr,
+        )
+        if custom_keys is None:
+            self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
+        else:
+            self.keys = custom_keys
+    
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        if batchdata is None:
+            raise ValueError("Must provide batch data for current iteration.")
+        batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
+        if len(batch) == 2:
+            inputs, targets = batch
+            args: Tuple = ()
+            kwargs: Dict = {}
+        else:
+            inputs, targets, args, kwargs = batch
+
+        # put iteration outputs into engine.state
+        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
+        # execute forward computation
+        with self.mode(self.network):
+            if self.amp:
+                with torch.cuda.amp.autocast():
+                    engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+            else:
+                engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+        engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+        engine.fire_event(IterationEvents.MODEL_COMPLETED)
+
+        return engine.state.output

@@ -1,12 +1,13 @@
-from logging import raiseExceptions
-from typing import TYPE_CHECKING, Callable, Tuple, Dict, Optional, Sequence
 import warnings
+from logging import raiseExceptions
+from typing import TYPE_CHECKING, Callable, Tuple, Dict, Optional, Sequence, Union, Iterable, List
 
 import torch
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
 from monai.engines.trainer import Trainer, SupervisedTrainer
+from monai.engines.utils import IterationEvents
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import apply_transform
 from monai_ex.engines.utils import default_prepare_batch_ex
@@ -16,12 +17,13 @@ from monai.transforms import Transform
 from monai.utils import exact_version, optional_import
 
 if TYPE_CHECKING:
-    from ignite.engine import Engine, Events
+    from ignite.engine import Engine, Events, EventEnum
     from ignite.metrics import Metric
 else:
     Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
     Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
     Metric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "Metric")
+    EventEnum, _ = optional_import("ignite.engine", "0.4.4", exact_version, "EventEnum")
 
 
 class SiameseTrainer(SupervisedTrainer):
@@ -160,6 +162,98 @@ class SiameseTrainer(SupervisedTrainer):
                 Keys.LATENT: torch.cat((output1, output2), dim=0),
                 Keys.LOSS: loss.item()
             }
+
+
+class SupervisedTrainerEx(SupervisedTrainer):
+    """Extension of MONAI's SupervisedTrainer.
+    Extended: custom_keys.
+
+    """
+    def __init__(
+        self,
+        device: torch.device,
+        max_epochs: int,
+        train_data_loader: Union[Iterable, DataLoader],
+        network: torch.nn.Module,
+        optimizer: Optimizer,
+        loss_function: Callable,
+        epoch_length: Optional[int] = None,
+        non_blocking: bool = False,
+        prepare_batch: Callable = default_prepare_batch_ex,
+        iteration_update: Optional[Callable] = None,
+        inferer: Optional[Inferer] = None,
+        post_transform: Optional[Transform] = None,
+        key_train_metric: Optional[Dict[str, Metric]] = None,
+        additional_metrics: Optional[Dict[str, Metric]] = None,
+        train_handlers: Optional[Sequence] = None,
+        amp: bool = False,
+        event_names: Optional[List[Union[str, EventEnum]]] = None,
+        event_to_attr: Optional[dict] = None,
+        custom_keys: Optional[dict] = None,
+    ) -> None:
+        super().__init__(
+            device,
+            max_epochs,
+            train_data_loader,
+            network,
+            optimizer,
+            loss_function,
+            epoch_length,
+            non_blocking,
+            prepare_batch,
+            iteration_update,
+            inferer,
+            post_transform,
+            key_train_metric,
+            additional_metrics,
+            train_handlers,
+            amp,
+            event_names,
+            event_to_attr,
+        )
+        if custom_keys is None:
+            self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
+        else:
+            self.keys = custom_keys
+    
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
+        if batchdata is None:
+            raise ValueError("Must provide batch data for current iteration.")
+        batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
+        if len(batch) == 2:
+            inputs, targets = batch
+            args: Tuple = ()
+            kwargs: Dict = {}
+        else:
+            inputs, targets, args, kwargs = batch
+        # put iteration outputs into engine.state
+        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
+
+        def _compute_pred_loss():
+            engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+            engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+            engine.state.output[self.keys["LOSS"]] = self.loss_function(engine.state.output[self.keys["PRED"]], targets).mean()
+            engine.fire_event(IterationEvents.LOSS_COMPLETED)
+
+        self.network.train()
+        self.optimizer.zero_grad()
+        if self.amp and self.scaler is not None:
+            with torch.cuda.amp.autocast():
+                _compute_pred_loss()
+            self.scaler.scale(engine.state.output[self.keys["LOSS"]]).backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            _compute_pred_loss()
+            engine.state.output[self.keys["LOSS"]].backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.optimizer.step()
+        engine.fire_event(IterationEvents.MODEL_COMPLETED)
+
+        return engine.state.output
+
+
 
 
 class RcnnTrainer(Trainer):
