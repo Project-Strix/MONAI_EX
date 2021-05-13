@@ -89,7 +89,9 @@ class NiftiSaverEx(NiftiSaver):
         for _ in range(self.output_name_uplevel):
             filename = os.path.dirname(filename)
         self._data_index += 1
-        original_affine = meta_data.get("original_affine", None) if meta_data else None
+
+        # original_affine = meta_data.get("original_affine", None) if meta_data else None
+        original_affine = meta_data.get("affine", None) if meta_data else None
         affine = meta_data.get("affine", None) if meta_data else None
         spatial_shape = meta_data.get("spatial_shape", None) if meta_data else None
 
