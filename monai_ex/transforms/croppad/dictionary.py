@@ -185,6 +185,29 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
         image: Optional[np.ndarray] = None,
     ) -> None:
         self.spatial_size = fall_back_tuple(self.spatial_size, default=label.shape[1:])
+
+        # Select subregion to assure valid roi
+        valid_start = np.floor_divide(self.spatial_size, 2)
+        # add 1 for random
+        valid_end = np.subtract(label.shape[1:] + np.array(1), self.spatial_size / np.array(2)).astype(np.uint16)
+        # int generation to have full range on upper side, but subtract unfloored size/2 to prevent rounded range
+        # from being too high
+        for i in range(len(valid_start)):  # need this because np.random.randint does not work with same start and end
+            if valid_start[i] == valid_end[i]:
+                valid_end[i] += 1
+
+        def _correct_centers(
+            center_ori: List[np.ndarray], valid_start: np.ndarray, valid_end: np.ndarray
+        ) -> List[np.ndarray]:
+            for i, c in enumerate(center_ori):
+                center_i = c
+                if c < valid_start[i]:
+                    center_i = valid_start[i]
+                if c >= valid_end[i]:
+                    center_i = valid_end[i] - 1
+                center_ori[i] = center_i
+            return center_ori
+
         if fg_indices is None or bg_indices is None:
             fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
         else:
@@ -202,7 +225,9 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
             else:
                 offset = [0, ] * len(self.spatial_size)
             # print('Offset: ', offset, "Center: ", center)
-            self.offset_centers.append([int(c+b) for c, b in zip(center, offset)])
+            offset_centers = [int(c+b) for c, b in zip(center, offset)]
+            self.offset_centers.append(_correct_centers(offset_centers, valid_start, valid_end))
+
         self.centers = self.offset_centers
 
 
