@@ -12,22 +12,23 @@
 from typing import TYPE_CHECKING, Dict, Optional
 
 import torch
+import torch.nn as nn
 
 from monai.utils import exact_version, optional_import
 from monai.handlers import CheckpointLoader
 
-Events, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Events")
-Checkpoint, _ = optional_import("ignite.handlers", "0.4.2", exact_version, "Checkpoint")
+Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
+Checkpoint, _ = optional_import("ignite.handlers", "0.4.4", exact_version, "Checkpoint")
 if TYPE_CHECKING:
     from ignite.engine import Engine
 else:
-    Engine, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Engine")
+    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
 
 
 class CheckpointLoaderEx(CheckpointLoader):
     """
-    Extension verion of MONAI's CheckpointLoader .
-    Extended: strict, skip_mismatch
+    Extension verion of MONAI's CheckpointLoader.
+    Extended: Enable null engine
 
     CheckpointLoader acts as an Ignite handler to load checkpoint data from file.
     It can load variables for network, optimizer, lr_scheduler, etc.
@@ -47,10 +48,12 @@ class CheckpointLoaderEx(CheckpointLoader):
             first load the module to CPU and then copy each parameter to where it was
             saved, which would result in all processes on the same machine using the
             same set of devices.
-        strict: whether to strictly enforce that the keys in :attr:`state_dict` with :attr:`prefix`
-                match the names of parameters and buffers in this module
-        skip_mismatch: whether to skip loading of layers where there is a mismatch in the 
-                       number of weights, or a mismatch in the shape of the weight
+        strict: whether to strictly enforce that the keys in `state_dict` match the keys
+            returned by `torch.nn.Module.state_dict` function. default to `True`.
+        strict_shape: whether to enforce the data shape of the matched layers in the checkpoint,
+            `if `False`, it will skip the layers that have different data shape with checkpoint content.
+            This can be useful advanced feature for transfer learning. users should totally
+            understand which layers will have different shape. default to `True`.
 
     """
 
@@ -61,16 +64,16 @@ class CheckpointLoaderEx(CheckpointLoader):
         name: Optional[str] = None,
         map_location: Optional[Dict] = None,
         strict=True,
-        skip_mismatch=False,
+        strict_shape=True,
     ) -> None:
         super(CheckpointLoaderEx, self).__init__(
             load_path=load_path,
             load_dict=load_dict,
             name=name,
-            map_location=map_location
+            map_location=map_location,
+            strict=strict,
+            strict_shape=strict_shape
         )
-        self.strict = strict
-        self.skip_mismatch = skip_mismatch
 
     def __call__(self, engine: Engine) -> None:
         """
@@ -78,20 +81,32 @@ class CheckpointLoaderEx(CheckpointLoader):
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
         checkpoint = torch.load(self.load_path, map_location=self.map_location)
-        key = 'net'
-        if len(self.load_dict) == 1:
-            key = list(self.load_dict.keys())[0]
-            if not (key in checkpoint):
-                checkpoint = {key: checkpoint}
-        
-        if self.skip_mismatch:
-            if key in self.load_dict.keys():
-                model_dict = self.load_dict[key].state_dict().copy()
-                filtered_dict = {k: v for k, v in checkpoint[key].items() if v.shape == model_dict[k].shape}
-                model_dict.update(filtered_dict)
-                checkpoint[key] = model_dict
-            else:
-                raise ValueError("Cannot find network key '{}' in model".format(key))
 
+        if not self.strict_shape:
+            k, _ = list(self.load_dict.items())[0]
+            # single object and checkpoint is directly a state_dict
+            if len(self.load_dict) == 1 and k not in checkpoint:
+                checkpoint = {k: checkpoint}
+
+            # skip items that don't match data shape
+            for k, obj in self.load_dict.items():
+                if isinstance(obj, (nn.DataParallel, nn.parallel.DistributedDataParallel)):
+                    obj = obj.module
+                if isinstance(obj, torch.nn.Module):
+                    d = obj.state_dict()
+                    checkpoint[k] = {k: v for k, v in checkpoint[k].items() if k in d and v.shape == d[k].shape}
+
+        # save current max epochs setting in the engine, don't overwrite it if larger than max_epochs in checkpoint
         Checkpoint.load_objects(to_load=self.load_dict, checkpoint=checkpoint, strict=self.strict)
         self.logger.info(f"Restored all variables from {self.load_path}")
+
+        if engine is not None:
+            prior_max_epochs = engine.state.max_epochs
+            if engine.state.epoch > prior_max_epochs:
+                raise ValueError(
+                    f"Epoch count ({engine.state.epoch}) in checkpoint is larger than "
+                    f"the `engine.state.max_epochs` ({prior_max_epochs}) of engine. To further train from checkpoint, "
+                    "construct trainer with `max_epochs` larger than checkpoint's epoch count. "
+                    "To use checkpoint for inference, no need to load state_dict for the engine."
+                )
+            engine.state.max_epochs = prior_max_epochs

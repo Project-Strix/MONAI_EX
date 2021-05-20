@@ -11,7 +11,7 @@ import numpy as np
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
-from monai_ex.transforms.intensity.array import ClipIntensity
+from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter
 
 
 class ScaleIntensityByDicomInfod(MapTransform):
@@ -98,6 +98,24 @@ class ClipIntensityd(MapTransform):
             d[key] = self.clipper(d[key])
         return d
 
+
+class MedianFilterd(MapTransform):
+    """Dictionary-based wrapper of :py:class:`monai_ex.transforms.MedianFilter`.
+
+    Args:
+        MapTransform ([type]): [description]
+    """
+    def __init__(self, keys, size, mode='reflect', cval=0.0, origin=0):
+        super(MedianFilterd, self).__init__(keys)
+        self.converter = MedianFilter(size, mode=mode, cval=cval, origin=origin)
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for _, key in enumerate(self.keys):
+            d[key] = self.converter(d[key])
+        return d
+
+
 class RandLocalPixelShuffled(MapTransform, Randomizable):
     def __init__(self, keys: KeysCollection):
         raise NotImplementedError
@@ -119,3 +137,4 @@ RandImageInpaintingD = RandImageInpaintingDict = RandImageInpaintingd
 RandImageOutpaintingD = RandImageOutpaintingDict = RandImageOutpaintingd
 RandNonlinearD = RandNonlinearDict = RandNonlineard
 ClipIntensityD = ClipIntensityDict = ClipIntensityd
+MedianFilterD = MedianFilterDict = MedianFilterd

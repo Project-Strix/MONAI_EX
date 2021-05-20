@@ -10,7 +10,7 @@ from monai.utils import GridSampleMode, GridSamplePadMode
 class NiftiSaverEx(NiftiSaver):
     """
     Extension verion of MONAI's NiftiSaver.
-    Extended: output_name_uplevel
+    Extended: data_rootdir_parent
 
     Save the data as NIfTI file, it can support single data content or a batch of data.
     Typically, the data can be segmentation predictions, call `save` for single data
@@ -23,7 +23,7 @@ class NiftiSaverEx(NiftiSaver):
         output_dir: str = "./",
         output_postfix: str = "seg",
         output_ext: str = ".nii.gz",
-        output_name_uplevel: int = 0,
+        data_rootdir_parent: int = 0,
         resample: bool = True,
         mode: Union[GridSampleMode, str] = GridSampleMode.BILINEAR,
         padding_mode: Union[GridSamplePadMode, str] = GridSamplePadMode.BORDER,
@@ -60,7 +60,7 @@ class NiftiSaverEx(NiftiSaver):
             align_corners=align_corners,
             dtype=dtype
         )
-        self.output_name_uplevel = output_name_uplevel
+        self.data_rootdir_parent = data_rootdir_parent
 
     def save(self, data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None) -> None:
         """
@@ -86,7 +86,7 @@ class NiftiSaverEx(NiftiSaver):
             :py:meth:`monai.data.nifti_writer.write_nifti`
         """
         filename = meta_data["filename_or_obj"] if meta_data else str(self._data_index)
-        for _ in range(self.output_name_uplevel):
+        for _ in range(self.data_rootdir_parent):
             filename = os.path.dirname(filename)
         self._data_index += 1
 
