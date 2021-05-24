@@ -75,3 +75,15 @@ class CastToTypeEx(Transform):
         else:
             raise TypeError(f"img must be one of (numpy.ndarray, torch.Tensor) but is {type(img).__name__}.")
 
+class ToTensorEx(Transform):
+    """
+    Converts the input image to a tensor without applying any other transformations.
+    """
+
+    def __call__(self, img: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+        """
+        Apply the transform to `img` and make it contiguous.
+        """
+        if torch.is_tensor(img):
+            return img.contiguous()
+        return torch.as_tensor(np.ascontiguousarray(img))

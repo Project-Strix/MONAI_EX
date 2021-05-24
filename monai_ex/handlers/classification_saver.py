@@ -37,7 +37,7 @@ class CSVSaverEx(CSVSaver):
         self._data_index += 1
         if torch.is_tensor(data):
             data = data.detach().cpu().numpy()
-        assert isinstance(data, np.ndarray)
+        assert isinstance(data, np.ndarray), type(data)
 
         count= 0
         while save_key in self._cache_dict:

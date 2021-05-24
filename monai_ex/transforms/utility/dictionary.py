@@ -6,7 +6,7 @@ import torch
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform
 from monai.utils import ensure_tuple, ensure_tuple_rep
-from monai_ex.transforms.utility.array import CastToTypeEx
+from monai_ex.transforms.utility.array import CastToTypeEx, ToTensorEx
 
 class CastToTypeExd(MapTransform):
     """
@@ -40,4 +40,25 @@ class CastToTypeExd(MapTransform):
 
         return d
 
+class ToTensorExd(MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`monai.transforms.ToTensor`.
+    """
+
+    def __init__(self, keys: KeysCollection) -> None:
+        """
+        Args:
+            keys: keys of the corresponding items to be transformed.
+                See also: :py:class:`monai.transforms.compose.MapTransform`
+        """
+        super().__init__(keys)
+        self.converter = ToTensorEx()
+
+    def __call__(self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]) -> Dict[Hashable, torch.Tensor]:
+        d = dict(data)
+        for key in self.keys:
+            d[key] = self.converter(d[key])
+        return d
+
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
+ToTensorExD = ToTensorExDict = ToTensorExd
