@@ -15,9 +15,9 @@ from .utility.dictionary import *
 from .register import LOADER, CHANNELER, ORIENTER, RESCALER, RESIZER, CROPADER, AUGMENTOR, UTILS
 
 LOADER.register('LoadImage', LoadImageD)
-LOADER.register('LoadNifti', LoadNiftiD)
-LOADER.register('LoadPNG', LoadPNGExD)
-LOADER.register('LoadNPY', LoadNumpyD)
+# LOADER.register('LoadNifti', LoadNiftiD)
+# LOADER.register('LoadPNG', LoadPNGExD)
+# LOADER.register('LoadNPY', LoadNumpyD)
 
 CHANNELER.register('AddChannel', AddChannelD)
 CHANNELER.register('AsChannelFirst', AsChannelFirstD)

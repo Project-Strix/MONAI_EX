@@ -23,8 +23,8 @@ from monai.handlers import TensorBoardImageHandler
 if TYPE_CHECKING:
     from ignite.engine import Engine, Events
 else:
-    Events, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Events")
-    Engine, _ = optional_import("ignite.engine", "0.4.2", exact_version, "Engine")
+    Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
+    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
 
 DEFAULT_TAG = "Loss"
 

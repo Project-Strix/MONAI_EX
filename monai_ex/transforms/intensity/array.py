@@ -7,6 +7,7 @@ from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 from scipy.special import comb
+from scipy.ndimage import median_filter
 
 from monai.transforms.compose import Randomizable, Transform
 
@@ -25,7 +26,7 @@ class ClipIntensity(Transform):
     def __call__(self, img: np.ndarray) -> np.ndarray:
         img = np.clip(img, self.cmin, self.cmax)
         return img
-        
+
 
 class RandLocalPixelShuffle(Randomizable, Transform):
     def __init__(self, prob: float = 0.5, num_block_range: Union[Sequence[int], int] = [50,200]):
@@ -123,16 +124,16 @@ class RandImageInpainting(Randomizable, Transform):
         for _ in range(self.num_block):
             self.generate_pos()
             if self.dim == 3:
-                image[:, 
-                      self.noise_x:self.noise_x+self.block_noise_size_x, 
-                      self.noise_y:self.noise_y+self.block_noise_size_y, 
-                      self.noise_z:self.noise_z+self.block_noise_size_z] = np.random.rand(self.block_noise_size_x, 
-                                                                                          self.block_noise_size_y, 
+                image[:,
+                      self.noise_x:self.noise_x+self.block_noise_size_x,
+                      self.noise_y:self.noise_y+self.block_noise_size_y,
+                      self.noise_z:self.noise_z+self.block_noise_size_z] = np.random.rand(self.block_noise_size_x,
+                                                                                          self.block_noise_size_y,
                                                                                           self.block_noise_size_z ) * 1.0
             elif self.dim == 2:
-                image[:, 
-                      self.noise_x:self.noise_x+self.block_noise_size_x, 
-                      self.noise_y:self.noise_y+self.block_noise_size_y] = np.random.rand(self.block_noise_size_x, 
+                image[:,
+                      self.noise_x:self.noise_x+self.block_noise_size_x,
+                      self.noise_y:self.noise_y+self.block_noise_size_y] = np.random.rand(self.block_noise_size_x,
                                                                                           self.block_noise_size_y ) * 1.0                
         return image
 
@@ -262,3 +263,17 @@ class RandNonlinear(Randomizable, Transform):
         nonlinear_x = np.interp(image, xvals, yvals)
         return nonlinear_x
 
+
+class MedianFilter(Transform):
+    """Calculate a multidimensional median filter.
+       Wrapper of scipy.ndimage.median_filter.
+    """
+    def __init__(self, size: int, mode='reflect', cval=0.0, origin=0) -> None:
+        self.size = size
+        self.mode = mode
+        self.cval = cval
+        self.origin = origin
+
+    def __call__(self, img: np.ndarray) -> np.ndarray:
+        img = median_filter(img, size=self.size, mode=self.mode, cval=self.cval, origin=self.origin)
+        return img

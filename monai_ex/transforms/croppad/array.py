@@ -4,12 +4,17 @@ import numpy as np
 import torch
 
 from monai.config import IndexSelection
-from monai_ex.utils import ensure_list, ensure_tuple_rep
-from monai.transforms.utils import generate_spatial_bounding_box
+from monai_ex.utils import ensure_list, ensure_tuple_rep, fall_back_tuple
+from monai.transforms.utils import (
+    map_binary_to_indices,
+    generate_spatial_bounding_box,
+    generate_pos_neg_label_crop_centers
+)
 from monai.transforms import (
     Transform,
     SpatialCrop,
-    ResizeWithPadOrCrop
+    ResizeWithPadOrCrop,
+    RandCropByPosNegLabel
 )
 
 
@@ -205,3 +210,106 @@ class GetMaxSlices3direcCrop(CenterMask2DSliceCrop):
             slices = super(GetMaxSlices3direcCrop, self).__call__(img, msk, z_axis=z_axis)
             final_slices = np.concatenate([final_slices, slices])
         return final_slices
+
+
+class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
+    """Extension of RandCropByPosNegLabel.
+    Extended: offset.
+
+    Crop random fixed sized regions with the center being a foreground or background voxel
+    based on the Pos Neg Ratio.
+    And will return a list of arrays for all the cropped images.
+    For example, crop two (3 x 3) arrays from (5 x 5) array with pos/neg=1::
+
+        [[[0, 0, 0, 0, 0],
+          [0, 1, 2, 1, 0],            [[0, 1, 2],     [[2, 1, 0],
+          [0, 1, 3, 0, 0],     -->     [0, 1, 3],      [3, 0, 0],
+          [0, 0, 0, 0, 0],             [0, 0, 0]]      [0, 0, 0]]
+          [0, 0, 0, 0, 0]]]
+
+    Args:
+        spatial_size: the spatial size of the crop region e.g. [224, 224, 128].
+            If its components have non-positive values, the corresponding size of `label` will be used.
+        label: the label image that is used for finding foreground/background, if None, must set at
+            `self.__call__`.  Non-zero indicates foreground, zero indicates background.
+        pos: used with `neg` together to calculate the ratio ``pos / (pos + neg)`` for the probability
+            to pick a foreground voxel as a center rather than a background voxel.
+        neg: used with `pos` together to calculate the ratio ``pos / (pos + neg)`` for the probability
+            to pick a foreground voxel as a center rather than a background voxel.
+        offset: add randonm offset to the center, if 0<offset<1, then offset_range = [0, offset*spatial_size/2),
+            if offset > 1, then offset_range = [0, offset)
+        num_samples: number of samples (crop regions) to take in each list.
+        image: optional image data to help select valid area, can be same as `img` or another image array.
+            if not None, use ``label == 0 & image > image_threshold`` to select the negative
+            sample (background) center. So the crop center will only come from the valid image areas.
+        image_threshold: if enabled `image`, use ``image > image_threshold`` to determine
+            the valid image content areas.
+        fg_indices: if provided pre-computed foreground indices of `label`, will ignore above `image` and
+            `image_threshold`, and randomly select crop centers based on them, need to provide `fg_indices`
+            and `bg_indices` together, expect to be 1 dim array of spatial indices after flattening.
+            a typical usage is to call `FgBgToIndices` transform first and cache the results.
+        bg_indices: if provided pre-computed background indices of `label`, will ignore above `image` and
+            `image_threshold`, and randomly select crop centers based on them, need to provide `fg_indices`
+            and `bg_indices` together, expect to be 1 dim array of spatial indices after flattening.
+            a typical usage is to call `FgBgToIndices` transform first and cache the results.
+
+    Raises:
+        ValueError: When ``pos`` or ``neg`` are negative.
+        ValueError: When ``pos=0`` and ``neg=0``. Incompatible values.
+    """
+    def __init__(
+        self,
+        spatial_size: Union[Sequence[int], int],
+        label: Optional[np.ndarray] = None,
+        pos: float = 1.0,
+        neg: float = 1.0,
+        offset: float = 0.0,
+        num_samples: int = 1,
+        image: Optional[np.ndarray] = None,
+        image_threshold: float = 0.0,
+        fg_indices: Optional[np.ndarray] = None,
+        bg_indices: Optional[np.ndarray] = None,
+    ):
+        super().__init__(
+            spatial_size=spatial_size,
+            label=label,
+            pos=pos,
+            neg=neg,
+            num_samples=num_samples,
+            image=image,
+            image_threshold=image_threshold,
+            fg_indices=fg_indices,
+            bg_indices=bg_indices
+        )
+        self.offset = offset
+        if self.offset < 0:
+            raise ValueError(f'Offset value must greater than 0, but got {offset}')
+    
+    def randomize(
+        self,
+        label: np.ndarray,
+        fg_indices: Optional[np.ndarray] = None,
+        bg_indices: Optional[np.ndarray] = None,
+        image: Optional[np.ndarray] = None,
+    ) -> None:
+        self.spatial_size = fall_back_tuple(self.spatial_size, default=label.shape[1:])
+        if fg_indices is None or bg_indices is None:
+            fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
+        else:
+            fg_indices_ = fg_indices
+            bg_indices_ = bg_indices
+        self.centers = generate_pos_neg_label_crop_centers(
+            self.spatial_size, self.num_samples, self.pos_ratio, label.shape[1:], fg_indices_, bg_indices_, self.R
+        )
+
+        self.offset_centers = []
+        for center in self.centers:
+            if 0 < self.offset <= 1:
+                offset = [self.R.randint(self.offset*sz//2)*self.R.choice([1, -1]) for sz in self.spatial_size]
+            elif self.offset > 1:
+                offset = [self.R.randint(self.offset)*self.R.choice([1, -1]) for sz in self.spatial_size]
+            else:
+                offset = [0, ] * len(self.spatial_size)
+            # print('Offset: ', offset, "Center: ", center)
+            self.offset_centers.append([int(c+b) for c, b in zip(center, offset)])
+        self.centers = self.offset_centers
