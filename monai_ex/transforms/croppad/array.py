@@ -33,8 +33,8 @@ class CenterMask2DSliceCrop(Transform):
         roi_size: Union[Sequence[int], int],
         crop_mode: str,
         z_axis: int,
-        center_mode: Optional[str]='center',
-        mask_data: Optional[np.ndarray]=None,
+        center_mode: Optional[str] = 'center',
+        mask_data: Optional[np.ndarray] = None,
         n_slices: int = 3
     ) -> None:
         super().__init__()
@@ -43,7 +43,7 @@ class CenterMask2DSliceCrop(Transform):
         self.crop_mode = crop_mode
         self.z_axis = z_axis
         self.center_mode = center_mode
-        self.n_slices = 1 if crop_mode=='single' else n_slices
+        self.n_slices = 1 if crop_mode == 'single' else n_slices
 
         if crop_mode not in ['single', 'cross', 'parallel']:
             raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
@@ -98,12 +98,13 @@ class CenterMask2DSliceCrop(Transform):
             )
 
         z_axis_ = z_axis if z_axis is not None else self.z_axis
-        
+
         if center is None:
             center = self.get_center_pos(mask_data_, z_axis_)
 
         if self.crop_mode in ['single', 'parallel']:
             size_ = self.get_new_spatial_size(z_axis_)
+            size_ = list(map(int, size_))
             slice_ = SpatialCrop(roi_center=center, roi_size=size_)(img)
             if np.any(slice_.shape[1:] != size_):
                 slice_ = ResizeWithPadOrCrop(spatial_size=size_)(slice_)
@@ -116,7 +117,7 @@ class CenterMask2DSliceCrop(Transform):
                 slice_ = SpatialCrop(roi_center=center, roi_size=size_)(img)
                 if np.any(slice_.shape[1:] != size_):
                     slice_ = ResizeWithPadOrCrop(spatial_size=size_)(slice_)
-                
+
                 cross_slices[k] = slice_.squeeze()
             return cross_slices
 
