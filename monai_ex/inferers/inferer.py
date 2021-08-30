@@ -1,8 +1,8 @@
-from typing import Sequence, Union, Optional, Any, Callable
-
+from typing import Sequence, Union, Optional, Any, Callable, Tuple
+import logging
 import torch
 
-from monai.inferers import Inferer
+from monai.inferers import Inferer, SimpleInferer
 from monai.utils import BlendMode, PytorchPadMode
 from monai_ex.inferers.utils import sliding_window_classification, sliding_window_2d_inference_3d
 
@@ -109,3 +109,39 @@ class SlidingWindowInferer2Dfor3D(Inferer):
             *args,
             **kwargs,
         )
+
+
+class SimpleInfererEx(SimpleInferer):
+    """
+    Extension of MONAI's SimpleInferer
+    Extended: support multiple inputs. Add logger_name for logging.
+
+    SimpleInferer is the normal inference method that run model forward() directly.
+    Usage example can be found in the :py:class:`monai.inferers.Inferer` base class.
+    """
+
+    def __init__(self, logger_name=None) -> None:
+        SimpleInferer.__init__(self)
+        self.logger = logging.getLogger(logger_name)
+
+    def __call__(
+        self,
+        inputs: Union[Sequence[torch.Tensor], torch.Tensor],
+        network: Callable[..., torch.Tensor],
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Unified callable function API of Inferers.
+
+        Args:
+            inputs: model input data for inference.
+            network: target model to execute inference.
+                supports callables such as ``lambda x: my_torch_model(x, additional_config)``
+            args: optional args to be passed to ``network``.
+            kwargs: optional keyword args to be passed to ``network``.
+
+        """
+        if isinstance(inputs, (list, tuple)):
+            self.logger.debug(f'Network got multiple inputs with len of {len(inputs)}.')
+
+        return network(inputs, *args, **kwargs)

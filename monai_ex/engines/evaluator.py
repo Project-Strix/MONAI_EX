@@ -213,7 +213,7 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
             self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
         else:
             self.keys = custom_keys
-    
+
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         if batchdata is None:
             raise ValueError("Must provide batch data for current iteration.")
