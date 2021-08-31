@@ -143,5 +143,6 @@ class SimpleInfererEx(SimpleInferer):
         """
         if isinstance(inputs, (list, tuple)):
             self.logger.debug(f'Network got multiple inputs with len of {len(inputs)}.')
-
+            if len(inputs) == 1:
+                return network(*inputs, *args, **kwargs)
         return network(inputs, *args, **kwargs)
