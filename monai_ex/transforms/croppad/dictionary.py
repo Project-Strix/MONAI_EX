@@ -14,7 +14,7 @@ from monai.transforms.utils import (
 )
 from monai.transforms import RandCropByPosNegLabeld, SpatialCrop
 
-from monai_ex.utils import fall_back_tuple, ensure_list
+from monai_ex.utils import fall_back_tuple, ensure_list, ensure_list_rep
 from monai_ex.transforms.croppad.array import CenterMask2DSliceCrop, FullMask2DSliceCrop, GetMaxSlices3direcCrop
 
 
@@ -27,23 +27,27 @@ class CenterMask2DSliceCropd(MapTransform):
         crop_mode: str,
         center_mode: str,
         z_axis: int,
-        n_slices: int = 3
+        n_slices: Union[Sequence[int], int] = 3
     ) -> None:
         super().__init__(keys)
         self.mask_key = mask_key
-        self.cropper = CenterMask2DSliceCrop(
-            roi_size=roi_size,
-            crop_mode=crop_mode,
-            center_mode=center_mode,
-            z_axis=z_axis,
-            mask_data=None,
-            n_slices=n_slices
-        )
-    
+        n_slices = ensure_list_rep(n_slices, len(keys))
+
+        self.cropper = [
+            CenterMask2DSliceCrop(
+                roi_size=roi_size,
+                crop_mode=crop_mode,
+                center_mode=center_mode,
+                z_axis=z_axis,
+                mask_data=None,
+                n_slices=n_slice
+            ) for n_slice in n_slices
+        ]
+
     def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
-        for key in self.keys:
-            d[key] = self.cropper(d[key], d[self.mask_key])
+        for i, key in enumerate(self.keys):
+            d[key] = self.cropper[i](d[key], d[self.mask_key])
         return d
 
 
