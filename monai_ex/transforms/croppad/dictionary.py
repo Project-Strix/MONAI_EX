@@ -12,8 +12,9 @@ from monai.transforms.utils import (
     map_binary_to_indices,
     generate_pos_neg_label_crop_centers
 )
-from monai.transforms import RandCropByPosNegLabeld, SpatialCrop
+from monai.transforms import RandCropByPosNegLabeld, SpatialCrop, ResizeWithPadOrCrop
 
+from monai_ex.utils import ImageMetaKey as Key
 from monai_ex.utils import fall_back_tuple, ensure_list, ensure_list_rep
 from monai_ex.transforms.croppad.array import CenterMask2DSliceCrop, FullMask2DSliceCrop, GetMaxSlices3direcCrop
 
@@ -160,6 +161,10 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
         image: Optional[np.ndarray] = None,
     ) -> None:
         self.spatial_size = fall_back_tuple(self.spatial_size, default=label.shape[1:])
+        if np.greater(self.spatial_size, label.shape[1:]).any():
+            self.centers = [None, ] * self.num_samples
+            return
+
         if fg_indices is None or bg_indices is None:
             fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
         else:
@@ -180,6 +185,39 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
             self.offset_centers.append([int(c+b) for c, b in zip(center, offset)])
         self.centers = self.offset_centers
 
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> List[Dict[Hashable, np.ndarray]]:
+        d = dict(data)
+        label = d[self.label_key]
+        image = d[self.image_key] if self.image_key else None
+        fg_indices = d.get(self.fg_indices_key) if self.fg_indices_key is not None else None
+        bg_indices = d.get(self.bg_indices_key) if self.bg_indices_key is not None else None
+
+        self.randomize(label, fg_indices, bg_indices, image)
+        if not isinstance(self.spatial_size, tuple):
+            raise TypeError(f"Expect spatial_size to be tuple, but got {type(self.spatial_size)}")
+        if self.centers is None:
+            raise AssertionError
+        results: List[Dict[Hashable, np.ndarray]] = [{} for _ in range(self.num_samples)]
+
+        for i, center in enumerate(self.centers):
+            for key in self.key_iterator(d):
+                img = d[key]
+                if np.greater(self.spatial_size, img.shape[1:]).any():
+                    cropper = ResizeWithPadOrCrop(spatial_size=self.spatial_size)
+                else:
+                    cropper = SpatialCrop(roi_center=tuple(center), roi_size=self.spatial_size)  # type: ignore
+                results[i][key] = cropper(img)
+            # fill in the extra keys with unmodified data
+            for key in set(data.keys()).difference(set(self.keys)):
+                results[i][key] = data[key]
+            # add `patch_index` to the meta data
+            for key in self.key_iterator(d):
+                meta_data_key = f"{key}_{self.meta_key_postfix}"
+                if meta_data_key not in results[i]:
+                    results[i][meta_data_key] = {}  # type: ignore
+                results[i][meta_data_key][Key.PATCH_INDEX] = i
+
+        return results
 
 class RandCrop2dByPosNegLabelD(Randomizable, MapTransform):
     def __init__(
