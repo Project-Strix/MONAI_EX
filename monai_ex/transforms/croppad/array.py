@@ -218,6 +218,7 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
     """Extension of RandCropByPosNegLabel.
     Extended: offset.
     Extended: use ResizeWithPadOrCrop to support excceed spatial_size.
+    Extended: add target_label to specify one label in label image.
 
     Crop random fixed sized regions with the center being a foreground or background voxel
     based on the Pos Neg Ratio.
@@ -272,6 +273,7 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
         image_threshold: float = 0.0,
         fg_indices: Optional[np.ndarray] = None,
         bg_indices: Optional[np.ndarray] = None,
+        target_label: Optional[int] = None,
     ):
         super().__init__(
             spatial_size=spatial_size,
@@ -285,6 +287,7 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
             bg_indices=bg_indices
         )
         self.offset = offset
+        self.target_label = target_label
         if self.offset < 0:
             raise ValueError(f'Offset value must greater than 0, but got {offset}')
 
@@ -354,6 +357,10 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
                 bg_indices = self.bg_indices
             else:
                 fg_indices, bg_indices = map_binary_to_indices(label, image, self.image_threshold)
+
+        if self.target_label is not None:
+            label = (label == self.target_label).astype(np.uint8)
+
         self.randomize(label, fg_indices, bg_indices, image)
         results: List[np.ndarray] = []
         if self.centers is not None:

@@ -134,6 +134,7 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
         bg_indices_key: Optional[str] = None,
         meta_key_postfix: str = "meta_dict",
         allow_missing_keys: bool = False,
+        target_label: Optional[int] = None,
     ) -> None:
         super().__init__(
             keys=keys,
@@ -150,6 +151,7 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
             allow_missing_keys=allow_missing_keys,
         )
         self.offset = offset
+        self.target_label = target_label
         if self.offset < 0:
             raise ValueError(f'Offset value must greater than 0, but got {offset}')
 
@@ -191,6 +193,9 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
         image = d[self.image_key] if self.image_key else None
         fg_indices = d.get(self.fg_indices_key) if self.fg_indices_key is not None else None
         bg_indices = d.get(self.bg_indices_key) if self.bg_indices_key is not None else None
+
+        if self.target_label is not None:
+            label = (label == self.target_label).astype(np.uint8)
 
         self.randomize(label, fg_indices, bg_indices, image)
         if not isinstance(self.spatial_size, tuple):
