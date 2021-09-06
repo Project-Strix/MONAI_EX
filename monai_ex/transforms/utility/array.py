@@ -1,57 +1,29 @@
 import logging
-from typing import Callable, Optional, Union, Dict
+from typing import Callable, Optional, Union, Dict, Any
 
 import numpy as np
 import torch
 
 from monai.transforms.compose import Transform
-from monai.transforms import DataStats, SaveImage
-from monai.config import NdarrayTensor
+from monai.transforms import DataStats, SaveImage, CastToType
+from monai.config import NdarrayTensor, DtypeLike
+from monai_ex.utils import convert_data_type_ex
 
-numpy_to_torch_dtype_dict = {
-        np.bool       : torch.bool,
-        np.uint8      : torch.uint8,
-        np.int8       : torch.int8,
-        np.int16      : torch.int16,
-        np.int32      : torch.int32,
-        np.int64      : torch.int64,
-        np.float16    : torch.float16,
-        np.float32    : torch.float32,
-        np.float64    : torch.float64,
-        np.complex64  : torch.complex64,
-        np.complex128 : torch.complex128
-    }
 
-string_to_torch_dtype_dict = {
-        'bool'       : torch.bool,
-        'uint8'      : torch.uint8,
-        'int8'       : torch.int8,
-        'int16'      : torch.int16,
-        'int32'      : torch.int32,
-        'int64'      : torch.int64,
-        'float16'    : torch.float16,
-        'float32'    : torch.float32,
-        'float64'    : torch.float64,
-        'complex64'  : torch.complex64,
-        'complex128' : torch.complex128
-}
-
-class CastToTypeEx(Transform):
+class CastToTypeEx(CastToType):
     """
     Cast the Numpy data to specified numpy data type, or cast the PyTorch Tensor to
     specified PyTorch data type.
     """
 
-    def __init__(self, dtype: Union[np.dtype, torch.dtype, str] = np.float32) -> None:
+    def __init__(self, dtype=np.float32) -> None:
         """
         Args:
             dtype: convert image to this data type, default is `np.float32`.
         """
         self.dtype = dtype
 
-    def __call__(
-        self, img: Union[np.ndarray, torch.Tensor], dtype: Optional[Union[np.dtype, torch.dtype,]] = None
-    ) -> Union[np.ndarray, torch.Tensor]:
+    def __call__(self, img: Any, dtype: Optional[Union[DtypeLike, torch.dtype]] = None) -> Any:
         """
         Apply the transform to `img`, assuming `img` is a numpy array or PyTorch Tensor.
 
@@ -62,19 +34,11 @@ class CastToTypeEx(Transform):
             TypeError: When ``img`` type is not in ``Union[numpy.ndarray, torch.Tensor]``.
 
         """
-        dtype_ = self.dtype if dtype is None else dtype
-
-        if isinstance(img, np.ndarray):
-            return img.astype(dtype_)
-        elif torch.is_tensor(img):
-            if isinstance(dtype_, str):
-                return torch.as_tensor(img, dtype=string_to_torch_dtype_dict[dtype_])
-            elif isinstance(dtype_, np.dtype):
-                return torch.as_tensor(img, dtype=numpy_to_torch_dtype_dict[dtype_])
-            else:
-                raise TypeError(f'Error dtype {dtype_} for torch tensor')
-        else:
-            raise TypeError(f"img must be one of (numpy.ndarray, torch.Tensor) but is {type(img).__name__}.")
+        type_list = (torch.Tensor, np.ndarray, int, bool, float, list, tuple)
+        if not isinstance(img, type_list):
+            raise TypeError(f"img must be one of ({type_list}) but is {type(img).__name__}.")
+        img_out, *_ = convert_data_type_ex(img, output_type=type(img), dtype=dtype or self.dtype)
+        return img_out
 
 
 class ToTensorEx(Transform):
