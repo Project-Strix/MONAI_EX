@@ -215,7 +215,7 @@ class SupervisedTrainerEx(SupervisedTrainer):
             self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
         else:
             self.keys = custom_keys
-    
+
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
         if batchdata is None:
             raise ValueError("Must provide batch data for current iteration.")
@@ -232,6 +232,9 @@ class SupervisedTrainerEx(SupervisedTrainer):
         def _compute_pred_loss():
             engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
             engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+            if engine.state.output[self.keys["PRED"]].shape != targets.shape and \
+               1 in engine.state.output[self.keys["PRED"]].shape:
+                engine.state.output[self.keys["PRED"]].squeeze_()
             engine.state.output[self.keys["LOSS"]] = self.loss_function(engine.state.output[self.keys["PRED"]], targets).mean()
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
 
