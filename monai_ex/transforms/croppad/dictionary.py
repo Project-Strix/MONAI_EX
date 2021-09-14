@@ -1,5 +1,6 @@
 from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List
 
+import torch
 import numpy as np
 
 from monai.config import KeysCollection
@@ -16,7 +17,12 @@ from monai.transforms import RandCropByPosNegLabeld, SpatialCrop, ResizeWithPadO
 
 from monai_ex.utils import ImageMetaKey as Key
 from monai_ex.utils import fall_back_tuple, ensure_list, ensure_list_rep
-from monai_ex.transforms.croppad.array import CenterMask2DSliceCrop, FullMask2DSliceCrop, GetMaxSlices3direcCrop
+from monai_ex.transforms.croppad.array import (
+    CenterMask2DSliceCrop,
+    FullMask2DSliceCrop,
+    GetMaxSlices3direcCrop,
+    KSpaceResample,
+)
 
 
 class CenterMask2DSliceCropd(MapTransform):
@@ -108,7 +114,7 @@ class GetMaxSlices3direcCropd(MapTransform):
             mask_data=None,
             n_slices=n_slices,
         )
-    
+
     def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for key in self.keys:
@@ -224,7 +230,7 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
 
         return results
 
-class RandCrop2dByPosNegLabelD(Randomizable, MapTransform):
+class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
@@ -327,8 +333,31 @@ class RandCrop2dByPosNegLabelD(Randomizable, MapTransform):
         return results
 
 
+class KSpaceResampled(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        roi_size: Union[Sequence[int], int],
+        as_tensor_output: bool = False,
+        device: Optional[torch.device] = None,
+    ) -> None:
+        super().__init__(keys)
+        self.resizer = KSpaceResample(
+            roi_size=roi_size,
+            as_tensor_output=as_tensor_output,
+            device=device,
+        )
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for key in self.keys:
+            d[key] = self.resizer(d[key])
+        return d
+
+
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
 GetMaxSlices3direcCropD = GetMaxSlices3direcCropDict = GetMaxSlices3direcCropd
 RandCropByPosNegLabelExD = RandCropByPosNegLabelExDict = RandCropByPosNegLabelExd
-RandCrop2dByPosNegLabeld = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabelD
+RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
+KSpaceResampleD = KSpaceResampleDict = KSpaceResampled

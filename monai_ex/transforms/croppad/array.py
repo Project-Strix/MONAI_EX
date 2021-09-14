@@ -18,6 +18,19 @@ from monai.transforms import (
     RandCropByPosNegLabel
 )
 
+try:
+    # PT_BEFORE_1_8 = torch.__version__ != "1.8.0" and version_leq(torch.__version__, "1.8.0")
+    PT_BEFORE_1_8 = float(torch.__version__[:3]) < 1.8
+except (AttributeError, TypeError):
+    PT_BEFORE_1_8 = True
+
+if PT_BEFORE_1_8:
+    import numpy.fft as fft
+    from numpy import absolute
+else:
+    import torch.fft as fft
+    from torch import absolute
+
 
 class CenterMask2DSliceCrop(Transform):
     """
@@ -72,7 +85,7 @@ class CenterMask2DSliceCrop(Transform):
                 z_index = (self.n_slices-1)//2
             elif z_index == mask_data_.shape[z_axis]-1 and self.crop_mode == 'parallel':
                 z_index -= (self.n_slices-1)//2
-            
+
             starts, ends = generate_spatial_bounding_box(np.take(mask_data_, z_index, z_axis)[np.newaxis,...], lambda x:x>0)
             centers = [(st+ed)//2 for st, ed in zip(starts, ends)]
             centers.insert(z_axis, z_index)
@@ -372,3 +385,40 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
                 results.append(cropper(img))
 
         return results
+
+
+class KSpaceResample(Transform):
+    def __init__(
+        self,
+        roi_size: Union[Sequence[int], int],
+        as_tensor_output: bool = False,
+        device: Optional[torch.device] = None,
+    ) -> None:
+        super().__init__()
+        self.roi_size = roi_size
+        self.as_tensor_output = as_tensor_output
+        self.device = device
+
+    def image2kspace(self, tensor: Union[np.ndarray, torch.Tensor]):
+        return fft.fftshift(fft.fftn(fft.ifftshift(tensor)))
+
+    def kspace2image(self, kspace: Union[np.ndarray, torch.Tensor]):
+        return fft.fftshift(fft.ifftn(fft.ifftshift(kspace))).real
+
+    def __call__(self, img: Union[np.ndarray, torch.Tensor]):
+        if PT_BEFORE_1_8:
+            dtype = img.dtype
+            is_tensor = isinstance(img, torch.Tensor)
+            if is_tensor:
+                img = img.numpy().cpu()
+
+            kdata = self.image2kspace(img)
+            kdata = ResizeWithPadOrCrop(spatial_size=self.roi_size)(kdata)
+            resampled_data = self.kspace2image(kdata)
+
+            if is_tensor:
+                return torch.as_tensor(resampled_data, dtype=dtype)
+            else:
+                return resampled_data.astype(dtype)
+        else:
+            raise NotImplementedError
