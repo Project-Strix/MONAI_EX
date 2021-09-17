@@ -39,5 +39,4 @@ class LayerCAM(GradCAMEx):
         b, c, *spatial = grad.shape
         weights = torch.relu(grad)
         acti_map = (weights * acti).sum(1, keepdim=True)
-        print('\nAct shape:', acti_map.shape)
         return F.relu(acti_map)
