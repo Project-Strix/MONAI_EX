@@ -1,11 +1,13 @@
+from typing import Callable
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from monai.visualize import CAMBase
+from monai_ex.visualize.grad_cam import GradCAMEx
 
 
-class LayerCAM(CAMBase):
+class LayerCAM(GradCAMEx):
     """Implements a class activation map extractor as described in 
     `"LayerCAM: Exploring Hierarchical Class Activation
      Maps for Localization" <http://mmcheng.net/mftp/Papers/21TIP_LayerCAM.pdf>`_.
@@ -37,20 +39,5 @@ class LayerCAM(CAMBase):
         b, c, *spatial = grad.shape
         weights = torch.relu(grad)
         acti_map = (weights * acti).sum(1, keepdim=True)
+        print('\nAct shape:', acti_map.shape)
         return F.relu(acti_map)
-
-    def __call__(self, x, class_idx=None, layer_idx=-1, retain_graph=False):
-        """
-        Compute the activation map with upsampling and postprocessing.
-
-        Args:
-            x: input tensor, shape must be compatible with `nn_module`.
-            class_idx: index of the class to be visualized. Default to argmax(logits)
-            layer_idx: index of the target layer if there are multiple target layers. Defaults to -1.
-            retain_graph: whether to retain_graph for torch module backward call.
-
-        Returns:
-            activation maps
-        """
-        acti_map = self.compute_map(x, class_idx=class_idx, retain_graph=retain_graph, layer_idx=layer_idx)
-        return self._upsample_and_post_process(acti_map, x)
