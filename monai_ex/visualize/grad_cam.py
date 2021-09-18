@@ -1,12 +1,33 @@
+from typing import Callable
+
+import torch.nn as nn
 import numpy as np
 
-from monai.visualize import GradCAM
+from monai.visualize import GradCAM, default_upsampler, default_normalizer
 
 
 class GradCAMEx(GradCAM):
     """Extension of MONAI's GradCAM. Adapted to medlp.
 
     """
+    def __init__(
+        self,
+        nn_module: nn.Module,
+        target_layers: str,
+        upsampler: Callable = default_upsampler,
+        postprocessing: Callable = default_normalizer,
+        register_backward: bool = True,
+        hierarchical: bool = False
+    ) -> None:
+        super().__init__(
+            nn_module=nn_module,
+            target_layers=target_layers,
+            upsampler=upsampler,
+            postprocessing=postprocessing,
+            register_backward=register_backward
+        )
+        self.hierarchical = hierarchical
+
     def _upsample_and_post_process(self, acti_maps, x, spatial_size=None):
         # upsampling and postprocessing
         outputs = []
@@ -20,18 +41,22 @@ class GradCAMEx(GradCAM):
 
         return np.concatenate(outputs, axis=1)
 
-    def __call__(self, x, class_idx=None, layer_idx=-1, retain_graph=False, img_spatial_size=None):
+    def __call__(self, x, class_idx=None, retain_graph=False, img_spatial_size=None):
         """
         Compute the activation map with upsampling and postprocessing.
 
         Args:
             x: input tensor, shape must be compatible with `nn_module`.
             class_idx: index of the class to be visualized. Default to argmax(logits)
-            layer_idx: index of the target layer if there are multiple target layers. Defaults to -1.
             retain_graph: whether to retain_graph for torch module backward call.
 
         Returns:
             activation maps
         """
-        acti_maps = self.compute_map(x, class_idx=class_idx, retain_graph=retain_graph, layer_idx=layer_idx)
+        acti_maps = self.compute_map(
+            x,
+            class_idx=class_idx,
+            retain_graph=retain_graph,
+            spatial_size=img_spatial_size
+        )
         return self._upsample_and_post_process(acti_maps, x, img_spatial_size)
