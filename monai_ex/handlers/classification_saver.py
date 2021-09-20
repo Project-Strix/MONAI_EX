@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Callable, Optional, Union, Dict
 import numpy as np
 
 from monai.data import CSVSaver, NiftiSaver
-from monai.utils import exact_version, optional_import
+from monai.utils import exact_version, optional_import, ensure_tuple
 from monai.handlers.classification_saver import ClassificationSaver
 
 Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
@@ -16,12 +16,20 @@ else:
 
 
 class CSVSaverEx(CSVSaver):
-    def __init__(self, output_dir="./", filename="predictions.csv", overwrite=True):
+    def __init__(
+        self,
+        output_dir="./",
+        filename="predictions.csv",
+        overwrite=True,
+        title: Optional[list] = None
+    ):
         super().__init__(
             output_dir=output_dir,
             filename=filename,
             overwrite=overwrite
         )
+        if title is not None:
+            self._cache_dict[title[0]] = title[1:]
 
     def save(self, data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None) -> None:
         """Save data into the cache dictionary. The metadata should have the following key:
@@ -39,7 +47,7 @@ class CSVSaverEx(CSVSaver):
             data = data.detach().cpu().numpy()
         # assert isinstance(data, np.ndarray), f'Expect np.ndarray, but got {type(data)}'
 
-        count= 0
+        count = 0
         while save_key in self._cache_dict:
             count += 1
             save_key += f'_{count}'
@@ -60,13 +68,26 @@ class CSVSaverEx(CSVSaver):
             meta_data: every key-value in the meta_data is corresponding to 1 batch of data.
 
         """
-        for i, data in enumerate(batch_data):  # save a batch of files
-            self.save(data, {k: meta_data[k][i] for k in meta_data} if meta_data else None)
+        if labels is None:
+            for i, data in enumerate(batch_data):  # save a batch of files
+                self.save(data, {k: meta_data[k][i] for k in meta_data} if meta_data else None)
+        else:
+            for i, (data, label) in enumerate(zip(batch_data, labels)):
+                if torch.is_tensor(data):
+                    data = data.detach().cpu().numpy()
+                if torch.is_tensor(label):
+                    label = label.detach().cpu().numpy()
+
+                self.save(
+                    np.array((data, label)),
+                    {k: meta_data[k][i] for k in meta_data} if meta_data else None
+                )
 
 
 class ClassificationSaverEx(ClassificationSaver):
     """
-    Event handler triggered on completing every iteration to save the classification predictions as CSV file.
+    Extension of MONAI's ClassificationSaver.
+    Extended: save_labels.
     """
 
     def __init__(
@@ -74,7 +95,7 @@ class ClassificationSaverEx(ClassificationSaver):
         output_dir: str = "./",
         filename: str = "predictions.csv",
         overwrite: bool = True,
-        save_errors: bool = False,
+        save_labels: bool = False,
         batch_transform: Callable = lambda x: x,
         output_transform: Callable = lambda x: x,
         name: Optional[str] = None,
@@ -102,20 +123,9 @@ class ClassificationSaverEx(ClassificationSaver):
             output_transform=output_transform,
             name=name,
         )
-        self.saver = CSVSaverEx(output_dir, filename, overwrite)
-        self.save_errors = save_errors
-        if self.save_errors:
-            self.FP_dir = os.path.join(output_dir, 'FP')
-            self.FN_dir = os.path.join(output_dir, 'FN')
-            os.makedirs(self.FP_dir, exist_ok=True)
-            os.makedirs(self.FN_dir, exist_ok=True)
-            self.fp_saver = NiftiSaver(
-                output_dir=self.FP_dir, output_postfix='', resample=False
-            )
-            self.fn_saver = NiftiSaver(
-                output_dir=self.FN_dir, output_postfix='', resample=False
-            )
-
+        self.save_labels = save_labels
+        title = np.array(['Filename', 'Pred', 'Groudtruth']) if save_labels else None
+        self.saver = CSVSaverEx(output_dir, filename, overwrite, title)
 
     def __call__(self, engine: Engine) -> None:
         """
@@ -124,20 +134,20 @@ class ClassificationSaverEx(ClassificationSaver):
         Args:
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
-        if self.save_errors:
-            meta_data, image, labels = self.batch_transform(engine.state.batch)
+        if self.save_labels:
+            meta_data, labels = self.batch_transform(engine.state.batch)
         else:
-            meta_data = self.batch_transform(engine.state.batch)
-            labels = None
+            meta_data, labels = self.batch_transform(engine.state.batch), None
 
         engine_output = self.output_transform(engine.state.output)
-        if self.save_errors:
-            raise NotImplementedError
-            y = int(labels.detach().cpu().numpy()) if torch.is_tensor(labels) else int(y)
-            o = int(engine_output.detach().cpu().numpy()) if torch.is_tensor(engine_output) else int(engine_output)
-            if y > 0 and y != o:
-                self.fn_saver.save_batch(image.detach().cpu().numpy(), meta_data)
-            elif y == 0 and y != o:
-                self.fp_saver.save_batch(image.detach().cpu().numpy(), meta_data)
+
+        # if self.save_labels:
+        #     raise NotImplementedError
+        #     y = int(labels.detach().cpu().numpy()) if torch.is_tensor(labels) else int(y)
+        #     o = int(engine_output.detach().cpu().numpy()) if torch.is_tensor(engine_output) else int(engine_output)
+        #     if y > 0 and y != o:
+        #         self.fn_saver.save_batch(image.detach().cpu().numpy(), meta_data)
+        #     elif y == 0 and y != o:
+        #         self.fp_saver.save_batch(image.detach().cpu().numpy(), meta_data)
 
         self.saver.save_batch(engine_output, labels, meta_data)
