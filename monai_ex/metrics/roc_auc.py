@@ -14,6 +14,7 @@ from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
     accuracy_score,
+    balanced_accuracy_score,
     precision_recall_fscore_support
 )
 
@@ -52,17 +53,19 @@ def save_roc_curve_fn(y_preds, y_targets, save_dir, is_multilabel=False):
     best_th, best_idx = cutoff_youdens(fpr, tpr, thresholds)
     precision, recall, f1, _ = precision_recall_fscore_support(y_targets.numpy(), y_preds.numpy()>best_th, average=average_type)
     acc = accuracy_score(y_targets.numpy(), y_preds.numpy()>best_th)
+    bal_acc = balanced_accuracy_score(y_targets.numpy(), y_preds.numpy()>best_th)
     print('Best precision, recall, f1:', precision, recall, f1)
     with open(os.path.join(save_dir, 'classification_results.json'), 'w') as f:
         json.dump( {
             'AUC': float(auc),
             'Best threshold': float(best_th),
-            'Precision': float(precision),
-            'Recall': float(recall),
+            'Precision(PPV)': float(precision),
+            'Recall(TPR)': float(recall),
             'Accuracy': float(acc),
-            'False positive rate': float(fpr[best_idx]),
-            'True positive rate': float(tpr[best_idx]),
+            'Balanced accuracy': float(bal_acc),
             'f1': float(f1),
+            # 'FPR on AUC': float(fpr[best_idx]),
+            # 'TPR on AUC': float(tpr[best_idx]),
             }, f, indent=2 )
 
     return 0
