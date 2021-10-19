@@ -257,6 +257,47 @@ class SupervisedTrainerEx(SupervisedTrainer):
         return engine.state.output
 
 
+class MultiTaskTrainer(Trainer):
+    def __init__(
+        self,
+        device: torch.device,
+        max_epochs: int,
+        train_data_loader: Union[Iterable, DataLoader],
+        network: torch.nn.Module,
+        optimizer: Optimizer,
+        loss_functions: List[Callable],
+        epoch_length: Optional[int] = None,
+        non_blocking: bool = False,
+        prepare_batch: Callable = default_prepare_batch_ex,
+        iteration_update: Optional[Callable] = None,
+        inferer: Optional[Inferer] = None,
+        post_transform: Optional[Transform] = None,
+        key_train_metric: Optional[Dict[str, Metric]] = None,
+        additional_metrics: Optional[Dict[str, Metric]] = None,
+        train_handlers: Optional[Sequence] = None,
+        amp: bool = False,
+        event_names: Optional[List[Union[str, EventEnum]]] = None,
+        event_to_attr: Optional[dict] = None,
+        custom_keys: Optional[dict] = None,
+    ) -> None:
+        super().__init__(
+            device=device,
+            max_epochs=max_epochs,
+            data_loader=train_data_loader,
+            epoch_length=epoch_length,
+            non_blocking=non_blocking,
+            prepare_batch=prepare_batch,
+            iteration_update=iteration_update,
+            post_transform=post_transform,
+            key_metric=key_train_metric,
+            additional_metrics=additional_metrics,
+            handlers=train_handlers,
+            amp=amp,
+            # add the iteration events
+            event_names=[IterationEvents] if event_names is None else event_names + [IterationEvents],
+            event_to_attr=event_to_attr,
+        )
+
 
 
 class RcnnTrainer(Trainer):
