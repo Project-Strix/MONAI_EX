@@ -1,22 +1,27 @@
-from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 import torch
 
-from monai.config import IndexSelection
-from monai_ex.utils import ensure_list, ensure_tuple_rep, fall_back_tuple
-from monai.utils import NumpyPadMode
+from monai_ex.utils import (
+    ensure_list,
+    ensure_tuple,
+    ensure_tuple_rep,
+    fall_back_tuple,
+    dtype_numpy_to_torch,
+)
 from monai.transforms.utils import (
     map_binary_to_indices,
     generate_spatial_bounding_box,
-    generate_pos_neg_label_crop_centers
+    generate_pos_neg_label_crop_centers,
 )
 from monai.transforms import (
     Transform,
     SpatialCrop,
     ResizeWithPadOrCrop,
-    RandCropByPosNegLabel
+    RandCropByPosNegLabel,
 )
+from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 
 try:
     # PT_BEFORE_1_8 = torch.__version__ != "1.8.0" and version_leq(torch.__version__, "1.8.0")
@@ -34,7 +39,7 @@ else:
 
 class CenterMask2DSliceCrop(Transform):
     """
-    Extract 2D slices from the image at the 
+    Extract 2D slices from the image at the
     center of mask with specified ROI size.
 
     Args:
@@ -47,9 +52,9 @@ class CenterMask2DSliceCrop(Transform):
         roi_size: Union[Sequence[int], int],
         crop_mode: str,
         z_axis: int,
-        center_mode: Optional[str] = 'center',
+        center_mode: Optional[str] = "center",
         mask_data: Optional[np.ndarray] = None,
-        n_slices: int = 3
+        n_slices: int = 3,
     ) -> None:
         super().__init__()
         self.roi_size = ensure_tuple_rep(roi_size, 2)
@@ -57,41 +62,53 @@ class CenterMask2DSliceCrop(Transform):
         self.crop_mode = crop_mode
         self.z_axis = z_axis
         self.center_mode = center_mode
-        self.n_slices = 1 if crop_mode == 'single' else n_slices
+        self.n_slices = 1 if crop_mode == "single" else n_slices
 
-        if crop_mode not in ['single', 'cross', 'parallel']:
+        if crop_mode not in ["single", "cross", "parallel"]:
             raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
-        if center_mode not in ['center', 'maximum']:
+        if center_mode not in ["center", "maximum"]:
             raise ValueError("Centering mode must be one of 'center, maximum'")
 
     def get_new_spatial_size(self, z_axis):
         spatial_size_ = ensure_list(self.roi_size)
-        if self.crop_mode in ['single', 'parallel']:
+        if self.crop_mode in ["single", "parallel"]:
             spatial_size_.insert(z_axis, self.n_slices)
         else:
-            spatial_size_ = [max(spatial_size_),]*3
+            spatial_size_ = [
+                max(spatial_size_),
+            ] * 3
 
         return spatial_size_
 
     def get_center_pos(self, mask_data, z_axis):
-        if self.center_mode == 'center':
-            starts, ends = generate_spatial_bounding_box(mask_data, lambda x:x>0)
-            return tuple((st+ed)//2 for st, ed in zip(starts, ends))
-        elif self.center_mode == 'maximum':
+        if self.center_mode == "center":
+            starts, ends = generate_spatial_bounding_box(mask_data, lambda x: x > 0)
+            return tuple((st + ed) // 2 for st, ed in zip(starts, ends))
+        elif self.center_mode == "maximum":
             axes = np.delete(np.arange(3), z_axis)
             mask_data_ = mask_data.squeeze()
             z_index = np.argmax(np.count_nonzero(mask_data_, axis=tuple(axes)))
-            if z_index == 0 and self.crop_mode == 'parallel':
-                z_index = (self.n_slices-1)//2
-            elif z_index == mask_data_.shape[z_axis]-1 and self.crop_mode == 'parallel':
-                z_index -= (self.n_slices-1)//2
+            if z_index == 0 and self.crop_mode == "parallel":
+                z_index = (self.n_slices - 1) // 2
+            elif (
+                z_index == mask_data_.shape[z_axis] - 1 and self.crop_mode == "parallel"
+            ):
+                z_index -= (self.n_slices - 1) // 2
 
-            starts, ends = generate_spatial_bounding_box(np.take(mask_data_, z_index, z_axis)[np.newaxis,...], lambda x:x>0)
-            centers = [(st+ed)//2 for st, ed in zip(starts, ends)]
+            starts, ends = generate_spatial_bounding_box(
+                np.take(mask_data_, z_index, z_axis)[np.newaxis, ...], lambda x: x > 0
+            )
+            centers = [(st + ed) // 2 for st, ed in zip(starts, ends)]
             centers.insert(z_axis, z_index)
             return tuple(centers)
 
-    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None, center: Optional[tuple]=None, z_axis: Optional[int]=None):
+    def __call__(
+        self,
+        img: np.ndarray,
+        msk: Optional[np.ndarray] = None,
+        center: Optional[tuple] = None,
+        z_axis: Optional[int] = None,
+    ):
         """
         Apply the transform to `img`, assuming `img` is channel-first and
         slicing doesn't apply to the channel dim.
@@ -116,7 +133,7 @@ class CenterMask2DSliceCrop(Transform):
         if center is None:
             center = self.get_center_pos(mask_data_, z_axis_)
 
-        if self.crop_mode in ['single', 'parallel']:
+        if self.crop_mode in ["single", "parallel"]:
             size_ = self.get_new_spatial_size(z_axis_)
             size_ = list(map(int, size_))
             slice_ = SpatialCrop(roi_center=center, roi_size=size_)(img)
@@ -125,7 +142,7 @@ class CenterMask2DSliceCrop(Transform):
 
             return np.moveaxis(slice_.squeeze(0), z_axis_, 0)
         else:
-            cross_slices = np.zeros(shape=(3,)+self.roi_size)
+            cross_slices = np.zeros(shape=(3,) + self.roi_size)
             for k in range(3):
                 size_ = np.insert(self.roi_size, k, 1)
                 slice_ = SpatialCrop(roi_center=center, roi_size=size_)(img)
@@ -142,30 +159,36 @@ class FullMask2DSliceCrop(CenterMask2DSliceCrop):
         roi_size: Union[Sequence[int], int],
         crop_mode: str,
         z_axis: int,
-        mask_data: Optional[np.ndarray]=None,
-        n_slices: int = 3
+        mask_data: Optional[np.ndarray] = None,
+        n_slices: int = 3,
     ):
         super().__init__(
             roi_size=roi_size,
             crop_mode=crop_mode,
             z_axis=z_axis,
             mask_data=mask_data,
-            n_slices=n_slices
+            n_slices=n_slices,
         )
-    
+
     def get_center_pos_(self, mask_data):
         axes = np.delete(np.arange(3), self.z_axis)
-        starts, ends = generate_spatial_bounding_box(mask_data, lambda x:x>0)
-        z_start, z_end = starts[self.z_axis]+(self.n_slices-1)//2, ends[self.z_axis]-(self.n_slices-1)//2
+        starts, ends = generate_spatial_bounding_box(mask_data, lambda x: x > 0)
+        z_start, z_end = (
+            starts[self.z_axis] + (self.n_slices - 1) // 2,
+            ends[self.z_axis] - (self.n_slices - 1) // 2,
+        )
         centers = []
         for z in np.arange(z_start, z_end):
-            center = [(st+ed)//2 for st, ed in zip(np.array(starts)[axes], np.array(ends)[axes])]
+            center = [
+                (st + ed) // 2
+                for st, ed in zip(np.array(starts)[axes], np.array(ends)[axes])
+            ]
             center.insert(self.z_axis, z)
             centers.append(tuple(center))
-        
+
         return centers
-    
-    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None):
+
+    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray] = None):
         if self.mask_data is None and msk is None:
             raise ValueError("Unknown mask_data.")
         mask_data_ = np.array([[1]])
@@ -182,7 +205,10 @@ class FullMask2DSliceCrop(CenterMask2DSliceCrop):
             )
 
         centers = self.get_center_pos_(mask_data_)
-        slices = [super(FullMask2DSliceCrop, self).__call__(img, msk, center) for center in centers]
+        slices = [
+            super(FullMask2DSliceCrop, self).__call__(img, msk, center)
+            for center in centers
+        ]
         return slices
 
 
@@ -192,8 +218,8 @@ class GetMaxSlices3direcCrop(CenterMask2DSliceCrop):
         roi_size: Union[Sequence[int], int],
         crop_mode: str,
         center_mode: str,
-        mask_data: Optional[np.ndarray]=None,
-        n_slices: int = 3
+        mask_data: Optional[np.ndarray] = None,
+        n_slices: int = 3,
     ):
         super().__init__(
             roi_size=roi_size,
@@ -203,8 +229,8 @@ class GetMaxSlices3direcCrop(CenterMask2DSliceCrop):
             mask_data=mask_data,
             n_slices=n_slices,
         )
-    
-    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray]=None):
+
+    def __call__(self, img: np.ndarray, msk: Optional[np.ndarray] = None):
         if self.mask_data is None and msk is None:
             raise ValueError("Unknown mask_data.")
         mask_data_ = np.array([[1]])
@@ -222,7 +248,9 @@ class GetMaxSlices3direcCrop(CenterMask2DSliceCrop):
 
         final_slices = np.empty(shape=(0, self.roi_size[0], self.roi_size[1]))
         for z_axis in range(3):
-            slices = super(GetMaxSlices3direcCrop, self).__call__(img, msk, z_axis=z_axis)
+            slices = super(GetMaxSlices3direcCrop, self).__call__(
+                img, msk, z_axis=z_axis
+            )
             final_slices = np.concatenate([final_slices, slices])
         return final_slices
 
@@ -274,6 +302,7 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
         ValueError: When ``pos`` or ``neg`` are negative.
         ValueError: When ``pos=0`` and ``neg=0``. Incompatible values.
     """
+
     def __init__(
         self,
         spatial_size: Union[Sequence[int], int],
@@ -297,12 +326,12 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
             image=image,
             image_threshold=image_threshold,
             fg_indices=fg_indices,
-            bg_indices=bg_indices
+            bg_indices=bg_indices,
         )
         self.offset = offset
         self.target_label = target_label
         if self.offset < 0:
-            raise ValueError(f'Offset value must greater than 0, but got {offset}')
+            raise ValueError(f"Offset value must greater than 0, but got {offset}")
 
     def randomize(
         self,
@@ -313,27 +342,45 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
     ) -> None:
         self.spatial_size = fall_back_tuple(self.spatial_size, default=label.shape[1:])
         if np.greater(self.spatial_size, label.shape[1:]).any():
-            self.centers = [None, ] * self.num_samples
+            self.centers = [
+                None,
+            ] * self.num_samples
             return
 
         if fg_indices is None or bg_indices is None:
-            fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
+            fg_indices_, bg_indices_ = map_binary_to_indices(
+                label, image, self.image_threshold
+            )
         else:
             fg_indices_ = fg_indices
             bg_indices_ = bg_indices
         self.centers = generate_pos_neg_label_crop_centers(
-            self.spatial_size, self.num_samples, self.pos_ratio, label.shape[1:], fg_indices_, bg_indices_, self.R
+            self.spatial_size,
+            self.num_samples,
+            self.pos_ratio,
+            label.shape[1:],
+            fg_indices_,
+            bg_indices_,
+            self.R,
         )
 
         self.offset_centers = []
         for center in self.centers:
             if 0 < self.offset <= 1:
-                offset = [self.R.randint(self.offset*sz//2)*self.R.choice([1, -1]) for sz in self.spatial_size]
+                offset = [
+                    self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1])
+                    for sz in self.spatial_size
+                ]
             elif self.offset > 1:
-                offset = [self.R.randint(self.offset)*self.R.choice([1, -1]) for sz in self.spatial_size]
+                offset = [
+                    self.R.randint(self.offset) * self.R.choice([1, -1])
+                    for sz in self.spatial_size
+                ]
             else:
-                offset = [0, ] * len(self.spatial_size)
-            self.offset_centers.append([int(c+b) for c, b in zip(center, offset)])
+                offset = [
+                    0,
+                ] * len(self.spatial_size)
+            self.offset_centers.append([int(c + b) for c, b in zip(center, offset)])
         self.centers = self.offset_centers
 
     def __call__(
@@ -369,7 +416,9 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
                 fg_indices = self.fg_indices
                 bg_indices = self.bg_indices
             else:
-                fg_indices, bg_indices = map_binary_to_indices(label, image, self.image_threshold)
+                fg_indices, bg_indices = map_binary_to_indices(
+                    label, image, self.image_threshold
+                )
 
         if self.target_label is not None:
             label = (label == self.target_label).astype(np.uint8)
@@ -388,15 +437,33 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
 
 
 class KSpaceResample(Transform):
+    """Resample input image into the specified `pixdim` in K-space domain."""
+
     def __init__(
         self,
-        roi_size: Union[Sequence[int], int],
-        as_tensor_output: bool = False,
+        pixdim: Union[Sequence[float], float],
+        diagonal: bool = False,
         device: Optional[torch.device] = None,
     ) -> None:
+        """
+        Args:
+            pixdim (Union[Sequence[float], float]): output voxel spacing. if providing a single number,
+                will use it for the first dimension. items of the pixdim sequence map to the spatial
+                dimensions of input image, if length of pixdim sequence is longer than image spatial dimensions,
+                will ignore the longer part, if shorter, will pad with `1.0`.
+            diagonal (bool, optional): whether to resample the input to have a diagonal affine matrix.
+                If True, the input data is resampled to the following affine::
+                    np.diag((pixdim_0, pixdim_1, ..., pixdim_n, 1))
+                This effectively resets the volume to the world coordinate system (RAS+ in nibabel).
+                The original orientation, rotation, shearing are not preserved.
+                If False, this transform preserves the axes orientation, orthogonal rotation and
+                translation components from the original affine. This option will not flip/swap axes
+                of the original data. Defaults to False.
+            device (Optional[torch.device], optional): device to store the output grid data. Defaults to None.
+        """
         super().__init__()
-        self.roi_size = roi_size
-        self.as_tensor_output = as_tensor_output
+        self.pixdim = np.array(ensure_tuple(pixdim), dtype=np.float64)
+        self.diagonal = diagonal
         self.device = device
 
     def image2kspace(self, tensor: Union[np.ndarray, torch.Tensor]):
@@ -405,20 +472,59 @@ class KSpaceResample(Transform):
     def kspace2image(self, kspace: Union[np.ndarray, torch.Tensor]):
         return fft.fftshift(fft.ifftn(fft.ifftshift(kspace))).real
 
-    def __call__(self, img: Union[np.ndarray, torch.Tensor]):
-        if PT_BEFORE_1_8:
-            dtype = img.dtype
-            is_tensor = isinstance(img, torch.Tensor)
-            if is_tensor:
-                img = img.numpy().cpu()
-
-            kdata = self.image2kspace(img)
-            kdata = ResizeWithPadOrCrop(spatial_size=self.roi_size)(kdata)
-            resampled_data = self.kspace2image(kdata)
-
-            if is_tensor:
-                return torch.as_tensor(resampled_data, dtype=dtype)
-            else:
-                return resampled_data.astype(dtype)
+    def __call__(
+        self,
+        img: Union[np.ndarray, torch.Tensor],
+        affine: Optional[np.ndarray] = None,
+    ):
+        sr = int(img.ndim - 1)
+        if sr <= 0:
+            raise ValueError("data_array must have at least one spatial dimension.")
+        if affine is None:
+            # default to identity
+            affine = np.eye(sr + 1, dtype=np.float64)
+            affine_ = np.eye(sr + 1, dtype=np.float64)
         else:
-            raise NotImplementedError
+            affine_ = to_affine_nd(sr, affine)
+
+        out_d = self.pixdim[:sr]
+        if out_d.size < sr:
+            out_d = np.append(out_d, [1.0] * (out_d.size - sr))
+        if np.any(out_d <= 0):
+            raise ValueError(f"pixdim must be positive, got {out_d}.")
+
+        # compute output affine, shape and offset
+        new_affine = zoom_affine(affine_, out_d, diagonal=self.diagonal)
+        output_shape, offset = compute_shape_offset(img.shape[1:], affine_, new_affine)
+        new_affine[:sr, -1] = offset[:sr]
+
+        original_dtype = img.dtype
+        convert_to_np = PT_BEFORE_1_8 and isinstance(img, torch.Tensor)
+        convert_to_torch = not PT_BEFORE_1_8 and isinstance(img, np.ndarray)
+
+        if convert_to_np:
+            img = img.cpu().numpy()
+        elif convert_to_torch:
+            img = torch.as_tensor(img, dtype=dtype_numpy_to_torch(original_dtype))
+
+        if isinstance(img, torch.Tensor):
+            img = img.to(self.device)
+
+        kdata = self.image2kspace(img)
+        kdata = ResizeWithPadOrCrop(spatial_size=output_shape)(kdata)
+        resampled_data = self.kspace2image(kdata)
+
+        if convert_to_np:
+            return (
+                torch.as_tensor(resampled_data, dtype=original_dtype),
+                affine,
+                new_affine,
+            )
+        elif convert_to_torch:
+            return (
+                resampled_data.cpu().numpy().astype(original_dtype),
+                affine,
+                new_affine,
+            )
+        else:
+            return resampled_data.astype(original_dtype), affine, new_affine
