@@ -21,17 +21,15 @@ class CSVSaverEx(CSVSaver):
         output_dir="./",
         filename="predictions.csv",
         overwrite=True,
-        title: Optional[list] = None
+        title: Optional[list] = None,
     ):
-        super().__init__(
-            output_dir=output_dir,
-            filename=filename,
-            overwrite=overwrite
-        )
+        super().__init__(output_dir=output_dir, filename=filename, overwrite=overwrite)
         if title is not None:
             self._cache_dict[title[0]] = title[1:]
 
-    def save(self, data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None) -> None:
+    def save(
+        self, data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None
+    ) -> None:
         """Save data into the cache dictionary. The metadata should have the following key:
             - ``'filename_or_obj'`` -- save the data corresponding to file name or object.
         If meta_data is None, use the default index from 0 to save data instead.
@@ -50,7 +48,7 @@ class CSVSaverEx(CSVSaver):
         count = 0
         while save_key in self._cache_dict:
             count += 1
-            save_key += f'_{count}'
+            save_key += f"_{count}"
 
         self._cache_dict[save_key] = data.astype(np.float32)
 
@@ -58,7 +56,7 @@ class CSVSaverEx(CSVSaver):
         self,
         batch_data: Union[torch.Tensor, np.ndarray],
         labels: Optional[Union[torch.Tensor, np.ndarray]] = None,
-        meta_data: Optional[Dict] = None
+        meta_data: Optional[Dict] = None,
     ) -> None:
         """Save a batch of data into the cache dictionary.
 
@@ -70,7 +68,9 @@ class CSVSaverEx(CSVSaver):
         """
         if labels is None:
             for i, data in enumerate(batch_data):  # save a batch of files
-                self.save(data, {k: meta_data[k][i] for k in meta_data} if meta_data else None)
+                self.save(
+                    data, {k: meta_data[k][i] for k in meta_data} if meta_data else None
+                )
         else:
             for i, (data, label) in enumerate(zip(batch_data, labels)):
                 if torch.is_tensor(data):
@@ -80,7 +80,7 @@ class CSVSaverEx(CSVSaver):
 
                 self.save(
                     np.array((data, label)),
-                    {k: meta_data[k][i] for k in meta_data} if meta_data else None
+                    {k: meta_data[k][i] for k in meta_data} if meta_data else None,
                 )
 
 
@@ -124,7 +124,7 @@ class ClassificationSaverEx(ClassificationSaver):
             name=name,
         )
         self.save_labels = save_labels
-        title = np.array(['Filename', 'Pred', 'Groudtruth']) if save_labels else None
+        title = np.array(["Filename", "Pred", "Groudtruth"]) if save_labels else None
         self.saver = CSVSaverEx(output_dir, filename, overwrite, title)
 
     def __call__(self, engine: Engine) -> None:
