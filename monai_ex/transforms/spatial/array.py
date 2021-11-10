@@ -8,9 +8,10 @@ from typing import Optional, Sequence, Union, Tuple
 import numpy as np
 import torch
 
-from monai.transforms.compose import Transform
+from monai.transforms.compose import Transform, Randomizable
 from monai.utils import InterpolateMode, ensure_tuple, ensure_tuple_size
 from scipy import ndimage as ndi
+
 
 class FixedResize(Transform):
     """
@@ -134,7 +135,7 @@ class LabelMorphology(Transform):
         elif input_ndim == 3:
             structure = ndi.generate_binary_structure(3, 1)
         else:
-            raise ValueError('Currently only support 2D&3D data')
+            raise ValueError(f'Currently only support 2D&3D data, but got image with shape of {img.shape}')
 
         channel_dim = None
         if input_ndim != img.ndim:
@@ -172,6 +173,33 @@ class LabelMorphology(Transform):
             return np.expand_dims(img, axis=channel_dim)
         else:
             return img
+
+
+class RandLabelMorphology(Randomizable, Transform):
+    def __init__(
+        self,
+        prob: float,
+        mode: str,
+        radius: int,
+        binary: bool
+    ):
+        self.converter = LabelMorphology(mode, radius, binary)
+
+    def randomize(self):
+        self._do_transform = self.R.random() < self.prob
+
+    def __call__(
+        self,
+        image,
+        mode: Optional[str] = None,
+        radius: Optional[int] = None,
+        binary: Optional[bool] = None
+    ):
+        self.randomize()
+        if not self._do_transform:
+            return image
+
+        return self.converter(image, mode, radius, binary)
 
 
 class Rotate90Ex(Transform):

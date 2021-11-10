@@ -21,7 +21,12 @@ import numpy as np
 
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform, Randomizable
-from monai_ex.transforms.spatial.array import FixedResize, LabelMorphology, Rotate90Ex
+from monai_ex.transforms.spatial.array import (
+    FixedResize,
+    LabelMorphology,
+    RandLabelMorphology,
+    Rotate90Ex
+)
 
 from monai.utils import (
     GridSampleMode,
@@ -90,6 +95,40 @@ class LabelMorphologyd(MapTransform):
         return d
 
 
+class RandLabelMorphologyd(Randomizable, MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.RandLabelMorphology`.
+    """
+    def __init__(
+        self,
+        keys: KeysCollection,
+        prob: float,
+        mode: str,
+        radius: int,
+        binary: bool
+    ):
+        super().__init__(keys)
+        self.prob = prob
+        self.mode = ensure_tuple_rep(mode, len(self.keys))
+        self.radius = ensure_tuple_rep(radius, len(self.keys))
+        self.binary = ensure_tuple_rep(binary, len(self.keys))
+        self.converter = LabelMorphology('dilation', 0, True)
+
+    def randomize(self):
+        self._do_transform = self.R.random() < self.prob
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Mapping[Hashable, np.ndarray]:
+        self.randomize()
+        if not self._do_transform:
+            return data
+
+        d = dict(data)
+        for idx, key in enumerate(self.keys):
+            if self.radius[idx] <= 0:
+                continue
+            d[key] = self.converter(d[key], mode=self.mode[idx], radius=self.radius[idx], binary=self.binary[idx])
+        return d
+    
+
 class RandRotate90Exd(Randomizable, MapTransform):
     """
     Dictionary-based version :py:class:`monai_ex.transforms.RandRotate90ex`.
@@ -143,4 +182,4 @@ class RandRotate90Exd(Randomizable, MapTransform):
 FixedResizeD = FixedResizeDict = FixedResized
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
-
+RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd

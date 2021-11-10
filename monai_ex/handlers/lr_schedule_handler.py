@@ -25,11 +25,11 @@ class LrScheduleTensorboardHandler(LrScheduleHandler):
         step_transform: Callable = lambda engine: (),
     ):
         super().__init__(
-            lr_scheduler = lr_scheduler,
-            print_lr = print_lr,
-            name = name,
-            epoch_level = epoch_level,
-            step_transform = step_transform
+            lr_scheduler=lr_scheduler,
+            print_lr=print_lr,
+            name=name,
+            epoch_level=epoch_level,
+            step_transform=step_transform,
         )
         self.writer = summary_writer
 
@@ -37,13 +37,17 @@ class LrScheduleTensorboardHandler(LrScheduleHandler):
         try:
             args = ensure_tuple(self.step_transform(engine))
         except KeyError as e:
-            self.logger.warn('Cannot get specified key from the step_transform. Skip lr scheduler.')
+            self.logger.warn(
+                "Cannot get specified key from the step_transform. Skip lr scheduler."
+            )
         else:
             self.lr_scheduler.step(*args)
 
             if self.print_lr:
-                self.logger.info(f"Current learning rate: {self.lr_scheduler._last_lr[0]}")
+                self.logger.info(
+                    f"Current learning rate: {self.lr_scheduler._last_lr[0]}"
+                )
             if self.writer is not None:
-                self.writer.add_scalar("Learning_rate", self.lr_scheduler._last_lr[0], engine.state.epoch)
-
-
+                self.writer.add_scalar(
+                    "Learning_rate", self.lr_scheduler._last_lr[0], engine.state.epoch
+                )
