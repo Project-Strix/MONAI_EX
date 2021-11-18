@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Optional, Callable
 import logging
-from monai_ex.utils import exact_version, optional_import
+from monai.utils import exact_version, optional_import
 
 if TYPE_CHECKING:
     from ignite.engine import Engine, Events

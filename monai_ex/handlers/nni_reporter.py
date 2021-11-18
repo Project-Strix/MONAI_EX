@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from monai.utils import exact_version, optional_import
+
 if TYPE_CHECKING:
     from ignite.engine import Engine, Events
     import nni as NNi
