@@ -5,8 +5,8 @@ import torch
 import numpy as np
 import nibabel as nib
 
-from monai_ex.visualize import GradCAM, LayerCAM
-from monai_ex.utils import exact_version, optional_import
+from monai.utils import exact_version, optional_import
+from monai_ex.visualize import GradCAMEx as GradCAM, LayerCAM
 from medlp.utilities.utils import apply_colormap_on_image
 
 from PIL import Image

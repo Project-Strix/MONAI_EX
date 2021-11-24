@@ -4,12 +4,12 @@ import torch.nn as nn
 import numpy as np
 
 from monai.visualize import GradCAM, default_upsampler, default_normalizer
+from monai.utils import ensure_tuple
 
 
 class GradCAMEx(GradCAM):
-    """Extension of MONAI's GradCAM. Adapted to medlp.
+    """Extension of MONAI's GradCAM. Adapted to medlp."""
 
-    """
     def __init__(
         self,
         nn_module: nn.Module,
@@ -17,20 +17,21 @@ class GradCAMEx(GradCAM):
         upsampler: Callable = default_upsampler,
         postprocessing: Callable = default_normalizer,
         register_backward: bool = True,
-        hierarchical: bool = False
+        hierarchical: bool = False,
     ) -> None:
         super().__init__(
             nn_module=nn_module,
             target_layers=target_layers,
             upsampler=upsampler,
             postprocessing=postprocessing,
-            register_backward=register_backward
+            register_backward=register_backward,
         )
         self.hierarchical = hierarchical
 
     def _upsample_and_post_process(self, acti_maps, x, spatial_size=None):
         # upsampling and postprocessing
         outputs = []
+        acti_maps = ensure_tuple(acti_maps)
         for acti_map in acti_maps:
             if self.upsampler:
                 img_spatial = spatial_size if spatial_size else x.shape[2:]
@@ -53,10 +54,10 @@ class GradCAMEx(GradCAM):
         Returns:
             activation maps
         """
-        acti_maps = self.compute_map(
+        acti_map = self.compute_map(
             x,
             class_idx=class_idx,
             retain_graph=retain_graph,
-            spatial_size=img_spatial_size
+            # spatial_size=img_spatial_size
         )
-        return self._upsample_and_post_process(acti_maps, x, img_spatial_size)
+        return self._upsample_and_post_process(acti_map, x, img_spatial_size)
