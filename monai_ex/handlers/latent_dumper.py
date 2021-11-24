@@ -1,14 +1,15 @@
 import os
-from pathlib import Path
 import logging
-from typing import TYPE_CHECKING, Optional, Union, Callable, List
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Callable, List
+import numpy as np
+from utils_cw import check_dir
 
 import torch
 
-from monai.visualize.class_activation_maps import ModelWithHooks
 from monai.data import decollate_batch
 from monai.utils import ImageMetaKey as Key
-from monai_ex.utils import exact_version, optional_import
+from monai.utils import exact_version, optional_import
 
 if TYPE_CHECKING:
     from ignite.engine import Engine, Events
@@ -17,22 +18,22 @@ else:
     Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
 
 
-class LatentCodeDumper:
+class LatentCodeSaver:
     """
     Event handler triggered on completing every iteration/epoch to save the latent code to local
     """
 
     def __init__(
         self,
-        net,
-        target_layers,
         output_dir: str = "./",
-        filename: str = "predictions.csv",
+        filename: str = "latents",
+        data_root_dir: str = "",
         overwrite: bool = True,
         batch_transform: Callable = lambda x: x,
         output_transform: Callable = lambda x: x,
         name: Optional[str] = None,
-        saver: Optional[CSVSaver] = None,
+        save_to_np: bool = False,
+        save_as_onefile: bool = True,
     ) -> None:
         """
         Args:
@@ -47,36 +48,21 @@ class LatentCodeDumper:
                 `ignite.engine.state.output`. the first dimension of its output will be treated as
                 the batch dimension. each item in the batch will be saved individually.
             name: identifier of logging.logger to use, defaulting to `engine.logger`.
-            save_rank: only the handler on specified rank will save to CSV file in multi-gpus validation,
-                default to 0.
-            saver: the saver instance to save classification results, if None, create a CSVSaver internally.
-                the saver must provide `save_batch(batch_data, meta_data)` and `finalize()` APIs.
 
         """
-        self.net = net
-        self.target_layers = target_layers
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir)
         self.filename = filename
+        self.data_root_dir = str(data_root_dir)
         self.overwrite = overwrite
         self.batch_transform = batch_transform
         self.output_transform = output_transform
-        self.saver = saver
+        self.save_to_np = save_to_np
+        self.save_as_onefile = save_as_onefile
 
         self.logger = logging.getLogger(name)
         self._name = name
         self._outputs: List[torch.Tensor] = []
         self._filenames: List[str] = []
-
-        # Convert to model with hooks if necessary
-        if not isinstance(self.net, ModelWithHooks):
-            self.nn_module = ModelWithHooks(
-                self.net,
-                target_layers,
-                register_forward=True,
-                register_backward=False,
-            )
-        else:
-            self.nn_module = self.net
 
     def attach(self, engine: Engine) -> None:
         """
@@ -121,31 +107,22 @@ class LatentCodeDumper:
         Args:
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
-        ws = idist.get_world_size()
-        if self.save_rank >= ws:
-            raise ValueError(
-                "target save rank is greater than the distributed group size."
-            )
+        if self.save_as_onefile:
+            outputs = torch.stack(self._outputs, dim=0)
 
-        outputs = torch.stack(self._outputs, dim=0)
-        filenames = self._filenames
-        if ws > 1:
-            outputs = evenly_divisible_all_gather(outputs, concat=True)
-            filenames = string_list_all_gather(filenames)
-
-        if len(filenames) == 0:
-            meta_dict = None
+            if self.save_to_np:
+                np.savez(self.output_dir / self.filename, outputs.cpu().numpy())
+            else:
+                torch.save(self.output_dir / self.filename, outputs.cpu())
         else:
-            if len(filenames) != len(outputs):
-                warnings.warn(
-                    f"filenames length: {len(filenames)} doesn't match outputs length: {len(outputs)}."
-                )
-            meta_dict = {Key.FILENAME_OR_OBJ: filenames}
+            for output, filename in zip(self._outputs, self._filenames):
+                try:
+                    filename = Path(filename).relative_to(self.data_root_dir)
+                except ValueError:  # todo: need a better way
+                    filename = self.filename
 
-        # save to CSV file only in the expected rank
-        if idist.get_rank() == self.save_rank:
-            saver = self.saver or CSVSaver(
-                self.output_dir, self.filename, self.overwrite
-            )
-            saver.save_batch(outputs, meta_dict)
-            saver.finalize()
+                output_path = check_dir(self.output_dir, filename, isFile=True)
+                if self.save_to_np:
+                    np.savez(output_path, output.cpu().numpy())
+                else:
+                    torch.save(output_path, output.cpu())
