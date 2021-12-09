@@ -23,6 +23,8 @@ from monai.transforms import (
 )
 from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 
+from monai.transforms.compose import MapTransform, Transform, Randomizable
+
 try:
     # PT_BEFORE_1_8 = torch.__version__ != "1.8.0" and version_leq(torch.__version__, "1.8.0")
     PT_BEFORE_1_8 = float(torch.__version__[:3]) < 1.8
@@ -574,3 +576,66 @@ class KSpaceResample(Transform):
             )
         else:
             return resampled_data.astype(original_dtype), affine, new_affine
+
+class RandCenterSpatialCrop(Randomizable, Transform):
+    """
+    Crop at the center of image with specified ROI size.
+
+    Args:
+        roi_size: the spatial size of the crop region e.g. [224,224,128]
+            If its components have non-positive values, the corresponding size of input image will be used.
+        offset: offset from image center
+    """
+
+    def __init__(self, roi_size: Union[Sequence[int], int]) -> None:
+        self.roi_size = roi_size
+
+    def correct_centers(
+            self, center_ori: List[np.ndarray], valid_start: np.ndarray, valid_end: np.ndarray
+        ) -> List[np.ndarray]:
+        for i, c in enumerate(center_ori):
+            center_i = c
+            if c < valid_start[i]:
+                center_i = valid_start[i]
+            if c >= valid_end[i]:
+                center_i = valid_end[i] - 1
+            center_ori[i] = center_i
+        return center_ori
+
+    def randomize(self, img):
+        # Select subregion to assure valid roi
+        valid_start = np.floor_divide(self.roi_size, 2)
+        # add 1 for random
+        valid_end = np.subtract(img.shape[1:] + np.array(1), self.roi_size / np.array(2)).astype(np.uint16)
+        # int generation to have full range on upper side, but subtract unfloored size/2 to prevent rounded range
+        # from being too high
+        for i in range(len(valid_start)):  # need this because np.random.randint does not work with same start and end
+            if valid_start[i] == valid_end[i]:
+                valid_end[i] += 1
+        
+        self.roi_size = fall_back_tuple(self.roi_size, img.shape[1:])
+        center = [i // 2 for i in img.shape[1:]]
+        
+        if 0 < self.offset <= 1:
+            offset = [
+                self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1])
+                for sz in self.roi_size
+            ]
+        elif self.offset > 1:
+            offset = [
+                self.R.randint(self.offset) * self.R.choice([1, -1])
+                for sz in self.roi_size
+            ]
+        else:
+            offset = [0,] * len(self.roi_size)
+        offset_centers = [int(c + b) for c, b in zip(center, offset)]
+        self.center = self.correct_centers(offset_centers, valid_start, valid_end)
+
+
+    def __call__(self, img: np.ndarray):
+        """
+        Apply the transform to `img`, assuming `img` is channel-first and
+        slicing doesn't apply to the channel dim.
+        """
+        cropper = SpatialCrop(roi_center=self.center, roi_size=self.roi_size)
+        return cropper(img)
