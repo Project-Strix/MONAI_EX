@@ -1,4 +1,14 @@
-from typing import TYPE_CHECKING, Callable, Tuple, Dict, Optional, Sequence, Union, Iterable, List
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Tuple,
+    Dict,
+    Optional,
+    Sequence,
+    Union,
+    Iterable,
+    List,
+)
 
 import torch
 from torch.utils.data import DataLoader
@@ -10,6 +20,7 @@ from monai.engines.utils import IterationEvents
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import Transform
 from monai.utils import ForwardMode, ensure_tuple, exact_version, optional_import
+from monai.visualize.class_activation_maps import ModelWithHooks
 
 if TYPE_CHECKING:
     from ignite.engine import Engine, EventEnum
@@ -82,7 +93,9 @@ class SiameseEvaluator(Evaluator):
         self.loss_function = loss_function
         self.inferer = SimpleInferer() if inferer is None else inferer
 
-    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def _iteration(
+        self, engine: Engine, batchdata: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
         """
         callback function for the Supervised Evaluation processing logic of 1 iteration in Ignite Engine.
         Return below items in a dictionary:
@@ -104,8 +117,12 @@ class SiameseEvaluator(Evaluator):
         if len(batchdata) != 2:
             raise ValueError(f"len of batchdata should be 2, but got {len(batchdata)}")
 
-        batch1 = self.prepare_batch(batchdata[0], engine.state.device, engine.non_blocking)
-        batch2 = self.prepare_batch(batchdata[1], engine.state.device, engine.non_blocking)
+        batch1 = self.prepare_batch(
+            batchdata[0], engine.state.device, engine.non_blocking
+        )
+        batch2 = self.prepare_batch(
+            batchdata[1], engine.state.device, engine.non_blocking
+        )
 
         if len(batch1) == 2:
             inputs1, targets1 = batch1
@@ -125,36 +142,59 @@ class SiameseEvaluator(Evaluator):
                     output2 = self.inferer(inputs2, self.network, *args, **kwargs)
                     if len(output1) == 1:
                         if self.loss_function:
-                            loss = self.loss_function(output1, output2, targets1, targets2).item()
+                            loss = self.loss_function(
+                                output1, output2, targets1, targets2
+                            ).item()
                         else:
                             loss = 0
                     elif len(output1) == 2:  # Contrastive+CE
                         if self.loss_function:
-                            loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2).item()
-                        else:loss = 0
+                            loss = self.loss_function(
+                                output1[0],
+                                output2[0],
+                                output1[1],
+                                output2[1],
+                                targets1,
+                                targets2,
+                            ).item()
+                        else:
+                            loss = 0
                     else:
-                        raise NotImplementedError(f'SiameseNet expected 1or2 outputs, but got {len(output1)}')
+                        raise NotImplementedError(
+                            f"SiameseNet expected 1or2 outputs, but got {len(output1)}"
+                        )
             else:
                 output1 = self.inferer(inputs1, self.network, *args, **kwargs)
                 output2 = self.inferer(inputs2, self.network, *args, **kwargs)
                 if len(output1) == 1:
                     if self.loss_function:
-                        loss = self.loss_function(output1, output2, targets1, targets2).item()
+                        loss = self.loss_function(
+                            output1, output2, targets1, targets2
+                        ).item()
                     else:
                         loss = 0
                 elif len(output1) == 2:  # Contrastive+CE
                     if self.loss_function:
-                        loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2).item()
+                        loss = self.loss_function(
+                            output1[0],
+                            output2[0],
+                            output1[1],
+                            output2[1],
+                            targets1,
+                            targets2,
+                        ).item()
                     else:
                         loss = 0
                 else:
-                    raise NotImplementedError(f'SiameseNet expected 1or2 outputs, but got {len(output1)}')
+                    raise NotImplementedError(
+                        f"SiameseNet expected 1or2 outputs, but got {len(output1)}"
+                    )
         if len(output1) == 1:
             return {
                 Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
                 Keys.LABEL: torch.cat((targets1, targets2), dim=0),
                 Keys.LATENT: torch.cat((output1, output2), dim=0),
-                Keys.LOSS: loss.item()
+                Keys.LOSS: loss.item(),
             }
         elif len(output2) == 2:
             return {
@@ -162,15 +202,18 @@ class SiameseEvaluator(Evaluator):
                 Keys.LABEL: torch.cat((targets1, targets2), dim=0),
                 Keys.LATENT: torch.cat((output1[0], output2[0]), dim=0),
                 Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
-                Keys.LOSS: loss.item()
+                Keys.LOSS: loss.item(),
             }
 
 
 class SupervisedEvaluatorEx(SupervisedEvaluator):
     """Extension of MONAI's SupervisedEvaluator.
-    Extended: custom_keys.
+    Extended: custom_keys: for support medlp custom input keys.
+              output_latent_code: output registered forward&backward latent code.
+              target_latent_layer: target layer name of the latent code.
 
     """
+
     def __init__(
         self,
         device: torch.device,
@@ -190,6 +233,8 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
         event_names: Optional[List[Union[str, EventEnum]]] = None,
         event_to_attr: Optional[dict] = None,
         custom_keys: Optional[dict] = None,
+        output_latent_code: bool = False,
+        target_latent_layer: Optional[str] = None,
     ) -> None:
         super().__init__(
             device,
@@ -210,11 +255,25 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
             event_to_attr,
         )
         if custom_keys is None:
-            self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
+            self.keys = {
+                "IMAGE": Keys.IMAGE,
+                "LABEL": Keys.LABEL,
+                "PRED": Keys.PRED,
+                "LOSS": Keys.LOSS,
+            }
         else:
             self.keys = custom_keys
 
-    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        if output_latent_code and target_latent_layer is not None:
+            self.network_latent = ModelWithHooks(
+                self.network, target_latent_layer, register_forward=True
+            )
+        else:
+            self.network_latent = None
+
+    def _iteration(
+        self, engine: Engine, batchdata: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
         if batchdata is None:
             raise ValueError("Must provide batch data for current iteration.")
         batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
@@ -231,9 +290,27 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
         with self.mode(self.network):
             if self.amp:
                 with torch.cuda.amp.autocast():
-                    engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+                    if self.network_latent:
+                        (
+                            engine.state.output[self.keys["PRED"]],
+                            engine.state.output[self.keys["FORWARD"]],
+                            engine.state.output[self.keys["BACKWARD"]],
+                        ) = self.inferer(inputs, self.network_latent, *args, **kwargs)
+                    else:
+                        engine.state.output[self.keys["PRED"]] = self.inferer(
+                            inputs, self.network, *args, **kwargs
+                        )
             else:
-                engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+                if self.network_latent:
+                    (
+                        engine.state.output[self.keys["PRED"]],
+                        engine.state.output[self.keys["FORWARD"]],
+                        engine.state.output[self.keys["BACKWARD"]],
+                    ) = self.inferer(inputs, self.network_latent, *args, **kwargs)
+                else:
+                    engine.state.output[self.keys["PRED"]] = self.inferer(
+                        inputs, self.network, *args, **kwargs
+                    )
         engine.fire_event(IterationEvents.FORWARD_COMPLETED)
         engine.fire_event(IterationEvents.MODEL_COMPLETED)
 
