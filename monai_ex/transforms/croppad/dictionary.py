@@ -1,4 +1,5 @@
 from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List
+from copy import deepcopy
 
 import torch
 import numpy as np
@@ -10,6 +11,7 @@ from monai.transforms.utils import (
     generate_pos_neg_label_crop_centers,
 )
 from monai.transforms import RandCropByPosNegLabeld, SpatialCrop, ResizeWithPadOrCrop
+from monai.utils import fall_back_tuple
 
 from monai_ex.utils import ImageMetaKey as Key
 from monai_ex.utils import (
@@ -23,6 +25,7 @@ from monai_ex.transforms.croppad.array import (
     FullMask2DSliceCrop,
     GetMaxSlices3direcCrop,
     KSpaceResample,
+    RandCenterSpatialCrop
 )
 
 
@@ -129,6 +132,40 @@ class GetMaxSlices3direcCropd(MapTransform):
             d[key] = self.cropper(d[key], d[self.mask_key])
         return d
 
+class FullImage2DSliceCropd(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        mask_key: KeysCollection,
+        roi_size: Union[Sequence[int], int],
+        crop_mode: str,
+        z_axis: int,
+        n_slices: int = 3
+    ) -> None:
+        super().__init__(keys)
+        self.mask_key = mask_key
+        self.cropper = FullImage2DSliceCrop(
+            roi_size=roi_size,
+            crop_mode=crop_mode,
+            z_axis=z_axis,
+            n_slices=n_slices
+        )
+    
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        mask = d[self.mask_key]
+        centers = self.cropper.get_center_pos_(mask)
+        results: List[Dict[Hashable, np.ndarray]] = [dict() for _ in centers]
+        for key in data.keys():
+            if key in self.keys:
+                img = d[key]
+                for i, crop in enumerate(self.cropper(img, msk=mask)):
+                    results[i][key] = crop
+            else:
+                for i in range(len(centers)):
+                    results[i][key] = data[key]
+        
+        return results
 
 class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
     """Dictionary-based version :py:class:`monai_ex.transforms.RandCropByPosNegLabelEx`."""
@@ -177,11 +214,34 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
         image: Optional[np.ndarray] = None,
     ) -> None:
         self.spatial_size = fall_back_tuple(self.spatial_size, default=label.shape[1:])
+
         if np.greater(self.spatial_size, label.shape[1:]).any():
             self.centers = [
                 None,
             ] * self.num_samples
             return
+        # Select subregion to assure valid roi
+        valid_start = np.floor_divide(self.spatial_size, 2)
+        # add 1 for random
+        valid_end = np.subtract(label.shape[1:] + np.array(1), self.spatial_size / np.array(2)).astype(np.uint16)
+        # int generation to have full range on upper side, but subtract unfloored size/2 to prevent rounded range
+        # from being too high
+        for i in range(len(valid_start)):  # need this because np.random.randint does not work with same start and end
+            if valid_start[i] == valid_end[i]:
+                valid_end[i] += 1
+
+        def _correct_centers(
+            center_ori: List[np.ndarray], valid_start: np.ndarray, valid_end: np.ndarray
+        ) -> List[np.ndarray]:
+            for i, c in enumerate(center_ori):
+                center_i = c
+                if c < valid_start[i]:
+                    center_i = valid_start[i]
+                if c >= valid_end[i]:
+                    center_i = valid_end[i] - 1
+                center_ori[i] = center_i
+            return center_ori
+
 
         if fg_indices is None or bg_indices is None:
             fg_indices_, bg_indices_ = map_binary_to_indices(
@@ -216,7 +276,8 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
                     0,
                 ] * len(self.spatial_size)
             # print('Offset: ', offset, "Center: ", center)
-            self.offset_centers.append([int(c + b) for c, b in zip(center, offset)])
+            offset_centers = [int(c+b) for c, b in zip(center, offset)]
+            self.offset_centers.append(_correct_centers(offset_centers, valid_start, valid_end))
         self.centers = self.offset_centers
 
     def __call__(
@@ -442,10 +503,84 @@ class KSpaceResampled(MapTransform):
             meta_data["affine"] = new_affine
         return d
 
+class RandCenterSpatialCropd(Randomizable, MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`monai.transforms.CenterSpatialCrop`.
+
+    Args:
+        keys: keys of the corresponding items to be transformed.
+            See also: monai.transforms.MapTransform
+        roi_size: the size of the crop region e.g. [224,224,128]
+            If its components have non-positive values, the corresponding size of input image will be used.
+        allow_missing_keys: don't raise exception if key is missing.
+    """
+
+    def __init__(
+        self, keys: KeysCollection, image_key: Optional[str] = None, roi_size: Union[Sequence[int], int]= None, offset: float = 0.0, allow_missing_keys: bool = False
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.offset = offset
+        self.roi_size = roi_size
+        self.image_key = image_key
+        self.centers = None
+
+    def correct_centers(
+            self, center_ori: List[np.ndarray], valid_start: np.ndarray, valid_end: np.ndarray
+        ) -> List[np.ndarray]:
+        for i, c in enumerate(center_ori):
+            center_i = c
+            if c < valid_start[i]:
+                center_i = valid_start[i]
+            if c >= valid_end[i]:
+                center_i = valid_end[i] - 1
+            center_ori[i] = center_i
+        return center_ori
+
+    def randomize(self, img):
+        # Select subregion to assure valid roi
+        valid_start = np.floor_divide(self.roi_size, 2)
+        # add 1 for random
+        valid_end = np.subtract(img.shape[1:] + np.array(1), self.roi_size / np.array(2)).astype(np.uint16)
+        # int generation to have full range on upper side, but subtract unfloored size/2 to prevent rounded range
+        # from being too high
+        for i in range(len(valid_start)):  # need this because np.random.randint does not work with same start and end
+            if valid_start[i] == valid_end[i]:
+                valid_end[i] += 1
+        
+        self.roi_size = fall_back_tuple(self.roi_size, img.shape[1:])
+        center = [i // 2 for i in img.shape[1:]]
+        
+        if 0 < self.offset <= 1:
+            offset = [
+                self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1])
+                for sz in self.roi_size
+            ]
+        elif self.offset > 1:
+            offset = [
+                self.R.randint(self.offset) * self.R.choice([1, -1])
+                for sz in self.roi_size
+            ]
+        else:
+            offset = [0,] * len(self.roi_size)
+        offset_centers = [int(c + b) for c, b in zip(center, offset)]
+        self.center = self.correct_centers(offset_centers, valid_start, valid_end)
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        self.randomize(d[self.image_key])
+        for key in self.key_iterator(d):
+            cropper = SpatialCrop(roi_center=self.center, roi_size=self.roi_size)
+            d[key] = cropper(d[key])
+        return d
+
+
+
 
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
+FullImage2DSliceCropD = FullImage2DSliceCropDict = FullImage2DSliceCropd
 GetMaxSlices3direcCropD = GetMaxSlices3direcCropDict = GetMaxSlices3direcCropd
 RandCropByPosNegLabelExD = RandCropByPosNegLabelExDict = RandCropByPosNegLabelExd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
+RandCenterSpatialCropD = RandCenterSpatialCropDict = RandCenterSpatialCropd

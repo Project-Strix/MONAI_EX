@@ -89,7 +89,9 @@ class NiftiSaverEx(NiftiSaver):
         for _ in range(self.data_rootdir_parent):
             filename = os.path.dirname(filename)
         self._data_index += 1
-        original_affine = meta_data.get("original_affine", None) if meta_data else None
+
+        # original_affine = meta_data.get("original_affine", None) if meta_data else None
+        original_affine = meta_data.get("affine", None) if meta_data else None
         affine = meta_data.get("affine", None) if meta_data else None
         spatial_shape = meta_data.get("spatial_shape", None) if meta_data else None
 
@@ -103,6 +105,7 @@ class NiftiSaverEx(NiftiSaver):
             data = np.expand_dims(data, -1)
         # change data to "channel last" format and write to nifti format file
         data = np.moveaxis(data, 0, -1)
+        
         write_nifti(
             data,
             file_name=filename,
