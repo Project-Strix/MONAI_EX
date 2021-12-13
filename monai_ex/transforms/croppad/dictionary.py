@@ -412,6 +412,7 @@ class KSpaceResampled(MapTransform):
         pixdim: Union[Sequence[float], float],
         diagonal: bool = False,
         device: Optional[torch.device] = None,
+        tolerance: float = 0.0001,
         meta_key_postfix: str = "meta_dict",
     ) -> None:
         super().__init__(keys)
@@ -420,6 +421,7 @@ class KSpaceResampled(MapTransform):
             pixdim=pixdim,
             diagonal=diagonal,
             device=device,
+            tolerance=tolerance,
         )
 
     def __call__(

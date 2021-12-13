@@ -444,6 +444,7 @@ class KSpaceResample(Transform):
         pixdim: Union[Sequence[float], float],
         diagonal: bool = False,
         device: Optional[torch.device] = None,
+        tolerance: float = 0.0001
     ) -> None:
         """
         Args:
@@ -460,11 +461,13 @@ class KSpaceResample(Transform):
                 translation components from the original affine. This option will not flip/swap axes
                 of the original data. Defaults to False.
             device (Optional[torch.device], optional): device to store the output grid data. Defaults to None.
+            tolerance: (float): Skip resample if spacing is same within given tolerance
         """
         super().__init__()
         self.pixdim = np.array(ensure_tuple(pixdim), dtype=np.float64)
         self.diagonal = diagonal
         self.device = device
+        self.tolerance = tolerance
 
     def image2kspace(self, tensor: Union[np.ndarray, torch.Tensor]):
         return fft.fftshift(fft.fftn(fft.ifftshift(tensor)))
@@ -492,6 +495,10 @@ class KSpaceResample(Transform):
             out_d = np.append(out_d, [1.0] * (out_d.size - sr))
         if np.any(out_d <= 0):
             raise ValueError(f"pixdim must be positive, got {out_d}.")
+
+        diff = np.diagonal(affine_, offset=0)[:sr] - out_d
+        if np.all(diff < self.tolerance):
+            return img, affine, affine
 
         # compute output affine, shape and offset
         new_affine = zoom_affine(affine_, out_d, diagonal=self.diagonal)

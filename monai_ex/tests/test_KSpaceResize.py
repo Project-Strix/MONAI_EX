@@ -3,14 +3,15 @@ import unittest
 import numpy as np
 from parameterized import parameterized
 
-from monai_ex.transforms.croppad.array import KSpaceResize
+from monai_ex.transforms.croppad.array import KSpaceResample
 
 
 TEST_CASE_1 = [
     {
-        "roi_size": (10, 10, 10),
-        "as_tensor_output": False,
-        "device": None,
+        "pixdim": (0.5, 0.5, 0.5),
+        "diagonal": False,
+        "device": "CPU",
+        "tolerance": 0.0001,
     },
     {
         "img": np.random.rand(1, 20, 20, 20)
@@ -21,9 +22,10 @@ TEST_CASE_1 = [
 
 TEST_CASE_2 = [
     {
-        "roi_size": (20, 20, 20),
-        "as_tensor_output": False,
-        "device": None,
+        "pixdim": (1, 1, 1),
+        "diagonal": False,
+        "device": "CPU",
+        "tolerance": 0.0001,
     },
     {
         "img": np.random.rand(1, 15, 15, 15)
@@ -33,10 +35,10 @@ TEST_CASE_2 = [
 ]
 
 
-class TestKSpaceResize(unittest.TestCase):
+class TestKSpaceResample(unittest.TestCase):
     @parameterized.expand([TEST_CASE_1, TEST_CASE_2])
     def test_type_shape(self, input_param, input_data, expected_type, expected_shape):
-        result = KSpaceResize(**input_param)(**input_data)
+        result = KSpaceResample(**input_param)(**input_data)
         self.assertIsInstance(result, expected_type)
         self.assertTupleEqual(result.shape, expected_shape)
 
