@@ -11,8 +11,11 @@ from monai.utils import ensure_tuple_rep
 from monai_ex.transforms.utility.array import (
     CastToTypeEx,
     ToTensorEx,
-    DataStatsEx
+    DataStatsEx,
+    DataLabelling,
+    Clahe,
 )
+
 
 class CastToTypeExd(MapTransform):
     """
@@ -22,7 +25,9 @@ class CastToTypeExd(MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
-        dtype: Union[Sequence[Union[np.dtype, torch.dtype, str]], np.dtype, torch.dtype, str] = np.float32,
+        dtype: Union[
+            Sequence[Union[np.dtype, torch.dtype, str]], np.dtype, torch.dtype, str
+        ] = np.float32,
     ) -> None:
         """
         Args:
@@ -61,7 +66,9 @@ class ToTensorExd(MapTransform):
         super().__init__(keys)
         self.converter = ToTensorEx()
 
-    def __call__(self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]) -> Dict[Hashable, torch.Tensor]:
+    def __call__(
+        self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]
+    ) -> Dict[Hashable, torch.Tensor]:
         d = dict(data)
         for key in self.keys:
             d[key] = self.converter(d[key])
@@ -72,6 +79,7 @@ class DataStatsExd(MapTransform):
     """
     Dictionary-based wrapper of :py:class:`monai_ex.transforms.DataStatsEx`.
     """
+
     def __init__(
         self,
         keys: KeysCollection,
@@ -96,14 +104,30 @@ class DataStatsExd(MapTransform):
         self.logger_handler = logger_handler
         self.printer = DataStatsEx(logger_handler=logger_handler)
 
-    def __call__(self, data: Mapping[Hashable, NdarrayTensor]) -> Dict[Hashable, NdarrayTensor]:
+    def __call__(
+        self, data: Mapping[Hashable, NdarrayTensor]
+    ) -> Dict[Hashable, NdarrayTensor]:
         d = dict(data)
-        for key, prefix, data_type, data_shape, value_range, data_value, additional_info in self.key_iterator(
-            d, self.prefix, self.data_type, self.data_shape, self.value_range, self.data_value, self.additional_info
+        for (
+            key,
+            prefix,
+            data_type,
+            data_shape,
+            value_range,
+            data_value,
+            additional_info,
+        ) in self.key_iterator(
+            d,
+            self.prefix,
+            self.data_type,
+            self.data_shape,
+            self.value_range,
+            self.data_value,
+            self.additional_info,
         ):
             d[key] = self.printer(
                 d[key],
-                d[f'{key}_{self.meta_key_postfix}'],
+                d[f"{key}_{self.meta_key_postfix}"],
                 prefix,
                 data_type,
                 data_shape,
@@ -114,6 +138,44 @@ class DataStatsExd(MapTransform):
         return d
 
 
+class DataLabellingd(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+    ) -> None:
+        super().__init__(keys)
+        self.converter = DataLabelling()
+
+    def __call__(
+        self, img: Mapping[Hashable, torch.Tensor]
+    ) -> Dict[Hashable, torch.Tensor]:
+        d = dict(img)
+        for idx, key in enumerate(self.keys):
+            d[key] = self.converter(d[key])
+        return d
+
+
+class Clahed(MapTransform):
+    def __init__(
+        self, keys: KeysCollection, kernel_size=None, clip_limit=0.01, nbins=256
+    ) -> None:
+        super().__init__(keys)
+        self.converter = Clahe()
+        self.kernel_size = kernel_size
+        self.clip_limit = clip_limit
+        self.nbins = nbins
+
+    def __call__(
+        self, img: Mapping[Hashable, torch.Tensor]
+    ) -> Dict[Hashable, torch.Tensor]:
+        d = dict(img)
+        for idx, key in enumerate(self.keys):
+            d[key] = self.converter(d[key])
+        return d
+
+
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
 DataStatsExD = DataStatsExDict = DataStatsExd
+DataLabellinD = DataLabellingDict = DataLabellingd
+ClaheD = ClaheDict = Clahed
