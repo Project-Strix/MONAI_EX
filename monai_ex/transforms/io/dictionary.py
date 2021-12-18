@@ -14,15 +14,17 @@ defined in :py:class:`monai.transforms.io.array`.
 
 Class names are ended with 'd' to denote dictionary-based transforms.
 """
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, Hashable, Mapping, Dict
 
 import numpy as np
-import h5py
 
 from monai.config import KeysCollection
 from monai.utils import ensure_tuple
 from monai.data.image_reader import ImageReader
 from monai.transforms.io.dictionary import LoadImaged
+from monai.transforms.transform import MapTransform
+from monai_ex.transforms import LoadTestData
+from monai.config.type_definitions import NdarrayOrTensor
 
 
 class LoadImageExd(LoadImaged):
@@ -44,7 +46,7 @@ class LoadImageExd(LoadImaged):
         reader: Optional[ImageReader] = None,
         dtype: Optional[np.dtype] = np.float32,
         meta_key_postfix: str = "meta_dict",
-        drop_meta_keys: Optional[Union[Sequence[str],str]] = None,
+        drop_meta_keys: Optional[Union[Sequence[str], str]] = None,
         overwriting: bool = False,
     ) -> None:
         """
@@ -66,7 +68,7 @@ class LoadImageExd(LoadImaged):
             reader=reader,
             dtype=dtype,
             meta_key_postfix=meta_key_postfix,
-            overwriting=overwriting
+            overwriting=overwriting,
         )
         self.drop_meta_keys = drop_meta_keys
 
@@ -79,12 +81,16 @@ class LoadImageExd(LoadImaged):
         d = dict(data)
         for key in self.keys:
             data = self._loader(d[key], reader)
-            assert isinstance(data, (tuple, list)), "loader must return a tuple or list."
+            assert isinstance(
+                data, (tuple, list)
+            ), "loader must return a tuple or list."
             d[key] = data[0]
             assert isinstance(data[1], dict), "metadata must be a dict."
             key_to_add = f"{key}_{self.meta_key_postfix}"
             if key_to_add in d and not self.overwriting:
-                raise KeyError(f"Meta data with key {key_to_add} already exists and overwriting=False.")
+                raise KeyError(
+                    f"Meta data with key {key_to_add} already exists and overwriting=False."
+                )
             if self.drop_meta_keys is not None:
                 for k in ensure_tuple(self.drop_meta_keys):
                     data[1].pop(k, None)
@@ -92,53 +98,45 @@ class LoadImageExd(LoadImaged):
         return d
 
 
-# class LoadHdf5d(LoadDatad):
-#     def __init__(
-#         self,
-#         keys: KeysCollection,
-#         h5_keys: Optional[KeysCollection] = None,
-#         affine_keys: Optional[KeysCollection] = None,
-#         dtype: Optional[Sequence[np.dtype]] = None,
-#         has_keys: Optional[bool] = True,
-#     ) -> None:
-#         self.keys = keys
-#         self.h5_keys = self.keys if h5_keys is None else h5_keys
-#         self.has_keys = has_keys
-#         self.dtype = dtype
-#         self.meta_key_postfix = 'meta_dict'
-#         assert len(self.keys) == len(self.h5_keys), f'Dict keys {self.keys} len must match hdf5 keys {self.h5_keys}'
-#         if self.dtype is not None:
-#             assert len(self.keys) == len(self.dtype), f'Dict keys {self.keys} len must match dtypes {self.dtype}'
-#         if affine_keys is not None:
-#             if isinstance(affine_keys, str):
-#                 self.affine_keys = [affine_keys]*len(self.h5_keys)
-#             elif isinstance(affine_keys, list):
-#                 self.affine_keys = affine_keys
-#                 assert len(self.affine_keys) == len(self.h5_keys), f'Affine keys {self.affine_keys} len must match h5 keys {self.h5_keys}'
-#             else:
-#                 raise ValueError
+class LoadTestDatad(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        height: int,
+        width: int,
+        depth: Optional[int] = None,
+        num_objs: int = 12,
+        rad_max: int = 30,
+        rad_min: int = 5,
+        noise_max: float = 0.0,
+        num_seg_classes: int = 5,
+        channel_dim: Optional[int] = None,
+        random_state: Optional[np.random.RandomState] = None,
+        allow_missing_keys: bool = False,
+    ):
+        super().__init__(keys, allow_missing_keys)
+        assert len(self.keys) == 2, f'Need two keys, but got {self.keys}'
+        self.loader = LoadTestData(
+            height,
+            width,
+            depth,
+            num_objs,
+            rad_max,
+            rad_min,
+            noise_max,
+            num_seg_classes,
+            channel_dim,
+            random_state,
+        )
 
+    def __call__(self) -> Dict[Hashable, NdarrayOrTensor]:
+        test_data = self.loader(None)
+        data = {}
+        for key, d in zip(self.keys, test_data):
+            data[key] = d
 
-#     def __call__(self, data):
-#         hf = h5py.File(data, 'r')
-#         if self.has_keys:
-#             assert np.all([ k in list(hf.keys()) for k in self.h5_keys]), f'Keys are not found in {hf.keys()}'
-#         if self.dtype is not None:
-#             dataset = { self.keys[i]:np.copy(hf.get(key)).astype(self.dtype[i]) if
-#                         key in hf.keys() else None for i, key in enumerate(self.h5_keys) }
-#         else:
-#             dataset = { self.keys[i]:np.copy(hf.get(key)) if
-#                         key in hf.keys() else None for i, key in enumerate(self.h5_keys) }
-        
-#         key_to_add = [f"{key}_{self.meta_key_postfix}" for key in self.keys]
-#         for k, affine in zip(key_to_add, self.affine_keys):
-#             if isinstance(affine, str):
-#                 meta_data = {"filename_or_obj":data, 'affine': np.copy(hf.get(affine)).astype(np.float32)}
-#             else:
-#                 meta_data = {"filename_or_obj":data, 'affine': np.eye(4)}
-#             dataset[k] = meta_data
-#         hf.close()
-#         return dataset
+        return data
 
 
 LoadImageExD = LoadImageExDict = LoadImageExd
+LoadTestDataD = LoadTestDataDict = LoadTestDatad
