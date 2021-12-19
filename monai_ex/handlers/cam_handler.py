@@ -15,7 +15,7 @@ from utils_cw import Normalize2
 if TYPE_CHECKING:
     from ignite.engine import Engine
 else:
-    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
+    Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
 
 
 class GradCamHandler:

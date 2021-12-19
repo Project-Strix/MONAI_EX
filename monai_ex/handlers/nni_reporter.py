@@ -7,8 +7,8 @@ if TYPE_CHECKING:
     from ignite.engine import Engine, Events
     import nni as NNi
 else:
-    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
-    Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
+    Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
+    Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
     NNi, _ = optional_import("nni")
 
 

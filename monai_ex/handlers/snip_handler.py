@@ -10,12 +10,12 @@ if TYPE_CHECKING:
     from ignite.handlers import Checkpoint
     from torch.utils.tensorboard import SummaryWriter
 else:
-    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
+    Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
     SummaryWriter, _ = optional_import("torch.utils.tensorboard", name="SummaryWriter")
-    Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
-    Metric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "Metric")
+    Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
+    Metric, _ = optional_import("ignite.metrics", "0.4.7", exact_version, "Metric")
     Checkpoint, _ = optional_import(
-        "ignite.handlers", "0.4.4", exact_version, "Checkpoint"
+        "ignite.handlers", "0.4.7", exact_version, "Checkpoint"
     )
 
 

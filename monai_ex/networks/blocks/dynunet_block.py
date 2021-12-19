@@ -10,11 +10,10 @@ from monai.networks.blocks.dynunet_block import (
     UnetResBlock, 
     UnetOutBlock, 
     UnetUpBlock,
-    get_acti_layer,
-    get_norm_layer,
     get_padding,
     get_output_padding
-    )
+)
+from monai.networks.layers import get_act_layer, get_norm_layer
 from monai_ex.networks.blocks.convolutions import ConvolutionEx as Convolution
 from monai_ex.networks.layers import Act, Norm, Dropout, Norm, split_args
 
@@ -85,7 +84,7 @@ class UnetResBlockEx(UnetResBlock):
             num_groups=num_groups,
             is_prunable=is_prunable,
         )
-        self.lrelu = get_acti_layer(("leakyrelu", {"inplace": True, "negative_slope": 0.01}))
+        self.lrelu = get_act_layer(("leakyrelu", {"inplace": True, "negative_slope": 0.01}))
         self.norm1 = get_norm_layer(spatial_dims, out_channels, norm_name)
         self.norm2 = get_norm_layer(spatial_dims, out_channels, norm_name)
         self.norm3 = get_norm_layer(spatial_dims, out_channels, norm_name)
@@ -151,7 +150,7 @@ class UnetBasicBlockEx(UnetBasicBlock):
             num_groups=num_groups,
             is_prunable=is_prunable,
         )
-        self.lrelu = get_acti_layer(("leakyrelu", {"inplace": True, "negative_slope": 0.01}))
+        self.lrelu = get_act_layer(("leakyrelu", {"inplace": True, "negative_slope": 0.01}))
         self.norm1 = get_norm_layer(spatial_dims, out_channels, norm_name)
         self.norm2 = get_norm_layer(spatial_dims, out_channels, norm_name)
 

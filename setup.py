@@ -10,7 +10,7 @@ setup(name='monai_ex',
       install_requires=[
             "h5py",
             "torch>=1.6.0",
-            "monai==0.5.0",
+            "monai==0.8.0",
       ],
       keywords=['deep learning', 'monai', 'pytorch']
       )

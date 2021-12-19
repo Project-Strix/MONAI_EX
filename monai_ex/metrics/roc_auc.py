@@ -12,9 +12,9 @@ import matplotlib.pyplot as plt
 
 from monai.utils import exact_version, optional_import
 
-Metric, _ = optional_import("ignite.metrics", "0.4.4", exact_version, "Metric")
+Metric, _ = optional_import("ignite.metrics", "0.4.7", exact_version, "Metric")
 EpochMetric, _ = optional_import(
-    "ignite.metrics", "0.4.4", exact_version, "EpochMetric"
+    "ignite.metrics", "0.4.7", exact_version, "EpochMetric"
 )
 
 from sklearn.metrics import (
