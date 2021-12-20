@@ -12,3 +12,4 @@ from .torch_visualizer import TorchVisualizer
 from .snip_handler import SNIP_prune_handler
 from .cam_handler import GradCamHandler
 from .latent_dumper import LatentCodeSaver
+from .utils import from_engine_ex

@@ -14,17 +14,17 @@ defined in :py:class:`monai.transforms.io.array`.
 
 Class names are ended with 'd' to denote dictionary-based transforms.
 """
-from typing import Optional, Sequence, Union, Hashable, Mapping, Dict
+from typing import Optional, Sequence, Union, Hashable, Mapping, Dict, Any
 
 import numpy as np
 
 from monai.config import KeysCollection
-from monai.utils import ensure_tuple
+from monai.utils import ensure_tuple, ImageMetaKey as Key
 from monai.data.image_reader import ImageReader
 from monai.transforms.io.dictionary import LoadImaged
 from monai.transforms.transform import MapTransform
-from monai_ex.transforms import LoadTestData
 from monai.config.type_definitions import NdarrayOrTensor
+from monai_ex.transforms import LoadTestData
 
 
 class LoadImageExd(LoadImaged):
@@ -112,10 +112,12 @@ class LoadTestDatad(MapTransform):
         num_seg_classes: int = 5,
         channel_dim: Optional[int] = None,
         random_state: Optional[np.random.RandomState] = None,
+        meta_key_postfix="meta_dict",
         allow_missing_keys: bool = False,
     ):
         super().__init__(keys, allow_missing_keys)
-        assert len(self.keys) == 2, f'Need two keys, but got {self.keys}'
+        assert len(self.keys) == 2, f"Need two keys, but got {self.keys}"
+        self.meta_postfix = meta_key_postfix
         self.loader = LoadTestData(
             height,
             width,
@@ -129,11 +131,16 @@ class LoadTestDatad(MapTransform):
             random_state,
         )
 
-    def __call__(self) -> Dict[Hashable, NdarrayOrTensor]:
+    def __call__(self, data: Any) -> Dict[Hashable, NdarrayOrTensor]:
         test_data = self.loader(None)
         data = {}
         for key, d in zip(self.keys, test_data):
             data[key] = d
+            data[f"{key}_{self.meta_postfix}"] = {
+                "affine": np.eye(4),
+                Key.FILENAME_OR_OBJ: "./dummy_file",
+                "original_channel_dim": "no_channel",
+            }
 
         return data
 

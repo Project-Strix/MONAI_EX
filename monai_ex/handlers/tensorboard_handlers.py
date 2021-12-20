@@ -127,25 +127,27 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         if torch.is_tensor(show_images):
             show_images = show_images.detach().cpu().numpy()
         if show_images is not None:
-            if not isinstance(show_images, np.ndarray):
+            if not isinstance(show_images, (np.ndarray, torch.Tensor, list, tuple)):
                 raise ValueError(
-                    "output_transform(engine.state.output)[0] must be an ndarray or tensor."
+                    "output_transform(engine.state.output)[0] must be an ndarray/tensor/list/tuple."
+                    f"but got type: {type(show_images)}"
                 )
             plot_2d_or_3d_image(
-                show_images,
-                step,
-                self._writer,
-                self.index,
-                self.max_channels,
-                self.max_frames,
-                self.prefix_name + "/input_0",
+                data=show_images,
+                step=step,
+                writer=self._writer,
+                index=self.index,
+                max_channels=self.max_channels,
+                frame_dim=-3,
+                max_frames=self.max_frames,
+                tag=self.prefix_name + "/input_0",
             )
 
         show_labels = self.batch_transform(engine.state.batch)[1]
         if torch.is_tensor(show_labels):
             show_labels = show_labels.detach().cpu().numpy()
         if show_labels is not None:
-            if not isinstance(show_labels, np.ndarray):
+            if not isinstance(show_labels, (np.ndarray, torch.Tensor, list, tuple)):
                 raise ValueError(
                     "batch_transform(engine.state.batch)[1] must be an ndarray or tensor."
                 )
@@ -154,24 +156,25 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
                 # add_3D_overlay_to_summary(self._writer, show_labels[0], show_images[0], name=self.prefix_name+"/input_1_overlay")
             else:
                 plot_2d_or_3d_image(
-                    show_labels,
-                    step,
-                    self._writer,
-                    self.index,
-                    self.max_channels,
-                    self.max_frames,
-                    self.prefix_name + "/input_1",
+                    data=show_labels,
+                    step=step,
+                    writer=self._writer,
+                    index=self.index,
+                    max_channels=self.max_channels,
+                    frame_dim=-3,
+                    max_frames=self.max_frames,
+                    tag=self.prefix_name + "/input_1",
                 )
 
         show_outputs = self.output_transform(engine.state.output)
-        #! tmp solution to handle multi-inputs
+        # ! tmp solution to handle multi-inputs
         if isinstance(show_outputs, (list, tuple)):
             show_outputs = show_outputs[0]
 
         if torch.is_tensor(show_outputs):
             show_outputs = show_outputs.detach().cpu().numpy()
         if show_outputs is not None:
-            if not isinstance(show_outputs, np.ndarray):
+            if not isinstance(show_outputs, (np.ndarray, torch.Tensor, list, tuple)):
                 raise ValueError(
                     "output_transform(engine.state.output) must be an ndarray "
                     f"or tensor, but got '{type(show_outputs)}'"
@@ -181,13 +184,14 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
                 # add_3D_overlay_to_summary(self._writer, show_outputs[0], show_images[0], name=self.prefix_name+"/output_overlap")
             else:
                 plot_2d_or_3d_image(
-                    show_outputs,
-                    step,
-                    self._writer,
-                    self.index,
-                    self.max_channels,
-                    self.max_frames,
-                    self.prefix_name + "/output",
+                    data=show_outputs,
+                    step=step,
+                    writer=self._writer,
+                    index=self.index,
+                    max_channels=self.max_channels,
+                    frame_dim=-3,
+                    max_frames=self.max_frames,
+                    tag=self.prefix_name + "/output",
                 )
 
         self._writer.flush()
