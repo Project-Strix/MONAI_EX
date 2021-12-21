@@ -7,7 +7,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
 from monai.engines.trainer import Trainer, SupervisedTrainer
-from monai.engines.utils import IterationEvents
+from monai.engines.utils import IterationEvents, default_metric_cmp_fn
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import apply_transform
 from monai_ex.engines.utils import default_prepare_batch_ex
@@ -182,34 +182,38 @@ class SupervisedTrainerEx(SupervisedTrainer):
         prepare_batch: Callable = default_prepare_batch_ex,
         iteration_update: Optional[Callable] = None,
         inferer: Optional[Inferer] = None,
-        post_transform: Optional[Transform] = None,
+        postprocessing: Optional[Transform] = None,
         key_train_metric: Optional[Dict[str, Metric]] = None,
         additional_metrics: Optional[Dict[str, Metric]] = None,
+        metric_cmp_fn: Callable = default_metric_cmp_fn,
         train_handlers: Optional[Sequence] = None,
         amp: bool = False,
         event_names: Optional[List[Union[str, EventEnum]]] = None,
         event_to_attr: Optional[dict] = None,
+        decollate: bool = True,
         custom_keys: Optional[dict] = None,
     ) -> None:
         super().__init__(
-            device,
-            max_epochs,
-            train_data_loader,
-            network,
-            optimizer,
-            loss_function,
-            epoch_length,
-            non_blocking,
-            prepare_batch,
-            iteration_update,
-            inferer,
-            post_transform,
-            key_train_metric,
-            additional_metrics,
-            train_handlers,
-            amp,
-            event_names,
-            event_to_attr,
+            device=device,
+            max_epochs=max_epochs,
+            train_data_loader=train_data_loader,
+            network=network,
+            optimizer=optimizer,
+            loss_function=loss_function,
+            epoch_length=epoch_length,
+            non_blocking=non_blocking,
+            prepare_batch=prepare_batch,
+            iteration_update=iteration_update,
+            inferer=inferer,
+            postprocessing=postprocessing,
+            key_train_metric=key_train_metric,
+            additional_metrics=additional_metrics,
+            metric_cmp_fn=metric_cmp_fn,
+            train_handlers=train_handlers,
+            amp=amp,
+            event_names=event_names,
+            event_to_attr=event_to_attr,
+            decollate=decollate,
         )
         if custom_keys is None:
             self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
@@ -237,6 +241,7 @@ class SupervisedTrainerEx(SupervisedTrainer):
                 engine.state.output[self.keys["PRED"]].squeeze_()
             engine.state.output[self.keys["LOSS"]] = self.loss_function(engine.state.output[self.keys["PRED"]], targets).mean()
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
+            print("\n\tnetwork output:", engine.state.output[self.keys["PRED"]])
 
         self.network.train()
         self.optimizer.zero_grad()

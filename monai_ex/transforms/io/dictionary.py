@@ -24,7 +24,7 @@ from monai.data.image_reader import ImageReader
 from monai.transforms.io.dictionary import LoadImaged
 from monai.transforms.transform import MapTransform
 from monai.config.type_definitions import NdarrayOrTensor
-from monai_ex.transforms import LoadTestData
+from monai_ex.transforms import GenerateSyntheticData, GenerateRandomData
 
 
 class LoadImageExd(LoadImaged):
@@ -98,7 +98,7 @@ class LoadImageExd(LoadImaged):
         return d
 
 
-class LoadTestDatad(MapTransform):
+class GenerateSyntheticDatad(MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
@@ -112,13 +112,19 @@ class LoadTestDatad(MapTransform):
         num_seg_classes: int = 5,
         channel_dim: Optional[int] = None,
         random_state: Optional[np.random.RandomState] = None,
+        image_only: bool = False,
         meta_key_postfix="meta_dict",
         allow_missing_keys: bool = False,
     ):
         super().__init__(keys, allow_missing_keys)
-        assert len(self.keys) == 2, f"Need two keys, but got {self.keys}"
+        if image_only:
+            assert len(self.keys) == 1, f"Need only one key, but got {self.keys}"
+        else:
+            assert len(self.keys) == 2, f"Need two keys, but got {self.keys}"
+
+        self.image_only = image_only
         self.meta_postfix = meta_key_postfix
-        self.loader = LoadTestData(
+        self.loader = GenerateSyntheticData(
             height,
             width,
             depth,
@@ -133,6 +139,9 @@ class LoadTestDatad(MapTransform):
 
     def __call__(self, data: Any) -> Dict[Hashable, NdarrayOrTensor]:
         test_data = self.loader(None)
+        if self.image_only:
+            test_data = [test_data[0]]
+
         data = {}
         for key, d in zip(self.keys, test_data):
             data[key] = d
@@ -145,5 +154,39 @@ class LoadTestDatad(MapTransform):
         return data
 
 
+class GenerateRandomDataD(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        height: int,
+        width: int,
+        depth: Optional[int] = None,
+        num_classes: int = 5,
+        channel_dim: Optional[int] = None,
+        random_state: Optional[np.random.RandomState] = None,
+        meta_key_postfix="meta_dict",
+        allow_missing_keys: bool = False,
+    ):
+        super().__init__(keys, allow_missing_keys)
+        assert len(self.keys) == 2, f"Need two keys, but got {self.keys}"
+        self.meta_postfix = meta_key_postfix
+        self.generator = GenerateRandomData(
+            height, width, depth, num_classes, channel_dim, random_state
+        )
+
+    def __call__(self, data):
+        random_data = self.generator(data)
+
+        data = {}
+        for key, d in zip(self.keys, random_data):
+            data[key] = d
+            data[f"{key}_{self.meta_postfix}"] = {
+                "affine": np.eye(4),
+                Key.FILENAME_OR_OBJ: "./dummy_file",
+                "original_channel_dim": "no_channel",
+            }
+        return data
+
+
 LoadImageExD = LoadImageExDict = LoadImageExd
-LoadTestDataD = LoadTestDataDict = LoadTestDatad
+GenerateSyntheticDataD = GenerateSyntheticDataDict = GenerateSyntheticDatad

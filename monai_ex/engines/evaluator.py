@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from monai_ex.engines.utils import CustomKeys as Keys
 from monai_ex.engines.utils import default_prepare_batch_ex
 from monai.engines import Evaluator, SupervisedEvaluator
-from monai.engines.utils import IterationEvents
+from monai.engines.utils import IterationEvents, default_metric_cmp_fn
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import Transform
 from monai.utils import ForwardMode, ensure_tuple, exact_version, optional_import
@@ -224,35 +224,39 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
         prepare_batch: Callable = default_prepare_batch_ex,
         iteration_update: Optional[Callable] = None,
         inferer: Optional[Inferer] = None,
-        post_transform: Optional[Transform] = None,
+        postprocessing: Optional[Transform] = None,
         key_val_metric: Optional[Dict[str, Metric]] = None,
         additional_metrics: Optional[Dict[str, Metric]] = None,
+        metric_cmp_fn: Callable = default_metric_cmp_fn,
         val_handlers: Optional[Sequence] = None,
         amp: bool = False,
         mode: Union[ForwardMode, str] = ForwardMode.EVAL,
         event_names: Optional[List[Union[str, EventEnum]]] = None,
         event_to_attr: Optional[dict] = None,
+        decollate: bool = True,
         custom_keys: Optional[dict] = None,
         output_latent_code: bool = False,
         target_latent_layer: Optional[str] = None,
     ) -> None:
         super().__init__(
-            device,
-            val_data_loader,
-            network,
-            epoch_length,
-            non_blocking,
-            prepare_batch,
-            iteration_update,
-            inferer,
-            post_transform,
-            key_val_metric,
-            additional_metrics,
-            val_handlers,
-            amp,
-            mode,
-            event_names,
-            event_to_attr,
+            device=device,
+            val_data_loader=val_data_loader,
+            network=network,
+            epoch_length=epoch_length,
+            non_blocking=non_blocking,
+            prepare_batch=prepare_batch,
+            iteration_update=iteration_update,
+            inferer=inferer,
+            postprocessing=postprocessing,
+            key_val_metric=key_val_metric,
+            additional_metrics=additional_metrics,
+            metric_cmp_fn=metric_cmp_fn,
+            val_handlers=val_handlers,
+            amp=amp,
+            mode=mode,
+            event_names=event_names,
+            event_to_attr=event_to_attr,
+            decollate=decollate,
         )
         if custom_keys is None:
             self.keys = {

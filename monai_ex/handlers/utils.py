@@ -5,8 +5,8 @@ from monai.utils import ensure_tuple, ensure_tuple_rep
 
 def from_engine_ex(
     keys: KeysCollection,
-    first: bool = False,
     transforms: Union[Callable, Sequence[Callable]] = lambda x: x,
+    first: bool = False
 ):
     keys = ensure_tuple(keys)
     transforms = ensure_tuple_rep(transforms, dim=len(keys))
@@ -20,4 +20,4 @@ def from_engine_ex(
             ret = [t(data[0][k]) if first else [t(i[k]) for i in data] for k, t in zip(keys, transforms)]
             return tuple(ret) if len(ret) > 1 else ret[0]
 
-    return _wrapper 
+    return _wrapper
