@@ -241,7 +241,6 @@ class SupervisedTrainerEx(SupervisedTrainer):
                 engine.state.output[self.keys["PRED"]].squeeze_()
             engine.state.output[self.keys["LOSS"]] = self.loss_function(engine.state.output[self.keys["PRED"]], targets).mean()
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
-            print("\n\tnetwork output:", engine.state.output[self.keys["PRED"]])
 
         self.network.train()
         self.optimizer.zero_grad()
