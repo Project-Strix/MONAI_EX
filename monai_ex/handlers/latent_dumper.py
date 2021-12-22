@@ -94,10 +94,13 @@ class LatentCodeSaver:
             # decollate the `dictionary of list` to `list of dictionaries`
             meta_data = decollate_batch(meta_data)
         engine_output = self.output_transform(engine.state.output)
+
         for m, o in zip(meta_data, engine_output):
             self._filenames.append(f"{m.get(Key.FILENAME_OR_OBJ)}")
             if isinstance(o, torch.Tensor):
                 o = o.detach()
+            if isinstance(o, (list, tuple)):  #! hot fix for decollate
+                o = o[0].detach()
             self._outputs.append(o)
 
     def _finalize(self, engine: Engine) -> None:
@@ -108,6 +111,7 @@ class LatentCodeSaver:
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
         if self.save_as_onefile:
+            print(len(self._outputs), len(self._outputs[0]))
             outputs = torch.stack(self._outputs, dim=0)
 
             if self.save_to_np:
