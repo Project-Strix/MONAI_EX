@@ -80,9 +80,9 @@ class CSVSaverEx(CSVSaver):
                     data = data.detach().cpu().numpy()
                 if torch.is_tensor(label):
                     label = label.detach().cpu().numpy()
-
+                # print('Type:', type(data), type(label), type((data, label)))
                 self.save(
-                    np.array((data, label)),
+                    np.array((data, label), dtype=object),
                     {k: meta_data[k][i] for k in meta_data} if meta_data else None,
                 )
         else:
