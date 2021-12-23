@@ -150,12 +150,16 @@ class ClassificationSaverEx(ClassificationSaver):
         meta_data = self.batch_transform(engine.state.batch)
         if isinstance(meta_data, (list, tuple)):
             if len(meta_data) == 2:
-                self._labels.append(meta_data[1])
+                if isinstance(meta_data[1], (list, tuple)):
+                    self._labels += list(meta_data[1])
+                else:
+                    self._labels.append(meta_data[1])
             meta_data = meta_data[0]
 
         if isinstance(meta_data, dict):
             # decollate the `dictionary of list` to `list of dictionaries`
             meta_data = decollate_batch(meta_data)
+
         engine_output = self.output_transform(engine.state.output)
         for m, o in zip(meta_data, engine_output):
             if isinstance(m, (list, tuple)):
@@ -166,9 +170,12 @@ class ClassificationSaverEx(ClassificationSaver):
             if isinstance(o, torch.Tensor):
                 o = o.detach()
             elif isinstance(o, (list, tuple)):
-                raise ValueError(
-                    f"Something wrong. Expect tensor for saving but got {type(o)}: {o}"
-                )
+                if len(o) == 1:
+                    o = o[0].detach()
+                else:
+                    raise ValueError(
+                        f"Something wrong. Expect tensor for saving but got {type(o)}: {o}"
+                    )
             self._outputs.append(o)
 
     def _finalize(self, engine: Engine) -> None:
@@ -201,5 +208,8 @@ class ClassificationSaverEx(ClassificationSaver):
 
         # save to CSV file only in the expected rank
         if idist.get_rank() == self.save_rank:
+            # print('Output:', type(outputs), len(outputs), type(outputs[0]), len(outputs[0]))
+            # print('Labels:', type(self._labels), len(self._labels), type(self._labels[0]), len(self._labels[0]))
+            # print('Meta:', type(meta_dict[Key.FILENAME_OR_OBJ]), len(meta_dict[Key.FILENAME_OR_OBJ]))
             self.saver.save_batch(outputs, self._labels, meta_dict)
             self.saver.finalize()
