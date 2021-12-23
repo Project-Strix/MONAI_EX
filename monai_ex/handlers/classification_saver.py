@@ -1,13 +1,21 @@
-import os
-import logging
+import warnings
 import torch
 from typing import TYPE_CHECKING, Callable, Optional, Union, Dict
 import numpy as np
 
-from monai.data import CSVSaver, NiftiSaver
-from monai.utils import exact_version, optional_import, ensure_tuple
+from monai.config import IgniteInfo
+from monai.data import CSVSaver, decollate_batch
+from monai.utils import (
+    exact_version,
+    min_version,
+    optional_import,
+    evenly_divisible_all_gather,
+    string_list_all_gather,
+    ImageMetaKey as Key,
+)
 from monai.handlers.classification_saver import ClassificationSaver
 
+idist, _ = optional_import("ignite", IgniteInfo.OPT_IMPORT_VERSION, min_version, "distributed")
 Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
 if TYPE_CHECKING:
     from ignite.engine import Engine
@@ -21,17 +29,15 @@ class CSVSaverEx(CSVSaver):
         output_dir="./",
         filename="predictions.csv",
         overwrite=True,
-        title: Optional[list] = None
+        title: Optional[list] = None,
     ):
-        super().__init__(
-            output_dir=output_dir,
-            filename=filename,
-            overwrite=overwrite
-        )
+        super().__init__(output_dir=output_dir, filename=filename, overwrite=overwrite)
         if title is not None:
             self._cache_dict[title[0]] = title[1:]
 
-    def save(self, data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None) -> None:
+    def save(
+        self, data: Union[torch.Tensor, np.ndarray], meta_data: Optional[Dict] = None
+    ) -> None:
         """Save data into the cache dictionary. The metadata should have the following key:
             - ``'filename_or_obj'`` -- save the data corresponding to file name or object.
         If meta_data is None, use the default index from 0 to save data instead.
@@ -50,7 +56,7 @@ class CSVSaverEx(CSVSaver):
         count = 0
         while save_key in self._cache_dict:
             count += 1
-            save_key += f'_{count}'
+            save_key += f"_{count}"
 
         self._cache_dict[save_key] = data.astype(np.float32)
 
@@ -58,7 +64,7 @@ class CSVSaverEx(CSVSaver):
         self,
         batch_data: Union[torch.Tensor, np.ndarray],
         labels: Optional[Union[torch.Tensor, np.ndarray]] = None,
-        meta_data: Optional[Dict] = None
+        meta_data: Optional[Dict] = None,
     ) -> None:
         """Save a batch of data into the cache dictionary.
 
@@ -68,10 +74,7 @@ class CSVSaverEx(CSVSaver):
             meta_data: every key-value in the meta_data is corresponding to 1 batch of data.
 
         """
-        if labels is None:
-            for i, data in enumerate(batch_data):  # save a batch of files
-                self.save(data, {k: meta_data[k][i] for k in meta_data} if meta_data else None)
-        else:
+        if labels:
             for i, (data, label) in enumerate(zip(batch_data, labels)):
                 if torch.is_tensor(data):
                     data = data.detach().cpu().numpy()
@@ -80,7 +83,12 @@ class CSVSaverEx(CSVSaver):
 
                 self.save(
                     np.array((data, label)),
-                    {k: meta_data[k][i] for k in meta_data} if meta_data else None
+                    {k: meta_data[k][i] for k in meta_data} if meta_data else None,
+                )
+        else:
+            for i, data in enumerate(batch_data):  # save a batch of files
+                self.save(
+                    data, {k: meta_data[k][i] for k in meta_data} if meta_data else None
                 )
 
 
@@ -124,8 +132,13 @@ class ClassificationSaverEx(ClassificationSaver):
             name=name,
         )
         self.save_labels = save_labels
-        title = np.array(['Filename', 'Pred', 'Groudtruth']) if save_labels else None
+        title = np.array(["Filename", "Pred", "Groudtruth"]) if save_labels else None
         self.saver = CSVSaverEx(output_dir, filename, overwrite, title)
+
+    def _started(self, engine: Engine) -> None:
+        self._outputs = []
+        self._filenames = []
+        self._labels = []
 
     def __call__(self, engine: Engine) -> None:
         """
@@ -134,20 +147,59 @@ class ClassificationSaverEx(ClassificationSaver):
         Args:
             engine: Ignite Engine, it can be a trainer, validator or evaluator.
         """
-        if self.save_labels:
-            meta_data, labels = self.batch_transform(engine.state.batch)
-        else:
-            meta_data, labels = self.batch_transform(engine.state.batch), None
+        meta_data = self.batch_transform(engine.state.batch)
+        if isinstance(meta_data, (list, tuple)):
+            if len(meta_data) == 2:
+                self._labels.append(meta_data[1])
+            meta_data = meta_data[0]
 
+        if isinstance(meta_data, dict):
+            # decollate the `dictionary of list` to `list of dictionaries`
+            meta_data = decollate_batch(meta_data)
         engine_output = self.output_transform(engine.state.output)
+        for m, o in zip(meta_data, engine_output):
+            if isinstance(m, (list, tuple)):
+                self._filenames.append(f"{m[0].get(Key.FILENAME_OR_OBJ)}")
+            else:
+                self._filenames.append(f"{m.get(Key.FILENAME_OR_OBJ)}")
 
-        # if self.save_labels:
-        #     raise NotImplementedError
-        #     y = int(labels.detach().cpu().numpy()) if torch.is_tensor(labels) else int(y)
-        #     o = int(engine_output.detach().cpu().numpy()) if torch.is_tensor(engine_output) else int(engine_output)
-        #     if y > 0 and y != o:
-        #         self.fn_saver.save_batch(image.detach().cpu().numpy(), meta_data)
-        #     elif y == 0 and y != o:
-        #         self.fp_saver.save_batch(image.detach().cpu().numpy(), meta_data)
+            if isinstance(o, torch.Tensor):
+                o = o.detach()
+            elif isinstance(o, (list, tuple)):
+                raise ValueError(
+                    f"Something wrong. Expect tensor for saving but got {type(o)}: {o}"
+                )
+            self._outputs.append(o)
 
-        self.saver.save_batch(engine_output, labels, meta_data)
+    def _finalize(self, engine: Engine) -> None:
+        """
+        All gather classification results from ranks and save to CSV file.
+
+        Args:
+            engine: Ignite Engine, it can be a trainer, validator or evaluator.
+        """
+        ws = idist.get_world_size()
+        if self.save_rank >= ws:
+            raise ValueError(
+                "target save rank is greater than the distributed group size."
+            )
+
+        outputs = torch.stack(self._outputs, dim=0)
+        filenames = self._filenames
+        if ws > 1:
+            outputs = evenly_divisible_all_gather(outputs, concat=True)
+            filenames = string_list_all_gather(filenames)
+
+        if len(filenames) == 0:
+            meta_dict = None
+        else:
+            if len(filenames) != len(outputs):
+                warnings.warn(
+                    f"filenames length: {len(filenames)} doesn't match outputs length: {len(outputs)}."
+                )
+            meta_dict = {Key.FILENAME_OR_OBJ: filenames}
+
+        # save to CSV file only in the expected rank
+        if idist.get_rank() == self.save_rank:
+            self.saver.save_batch(outputs, self._labels, meta_dict)
+            self.saver.finalize()
