@@ -4,10 +4,11 @@ from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Union
 import numpy as np
 import torch
 
-from monai.config import KeysCollection, NdarrayTensor
+from monai.config import KeysCollection, NdarrayTensor, NdarrayOrTensor
 from monai.transforms.compose import MapTransform
 from monai.utils import ensure_tuple_rep
 
+from monai.transforms import SplitChannel
 from monai_ex.transforms.utility.array import (
     CastToTypeEx,
     ToTensorEx,
@@ -114,6 +115,67 @@ class DataStatsExd(MapTransform):
         return d
 
 
+class SplitChannelExd(MapTransform):
+    """
+    Extension of `monai.transforms.SplitChanneld`.
+    Extended: `output_names`: the names to construct keys to store split data if 
+              you don't want postfixes.
+              `remove_origin`: delete original data of given keys
+
+    """
+
+    backend = SplitChannel.backend
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        output_postfixes: Optional[Sequence[str]] = None,
+        output_names: Optional[Sequence[str]] = None,
+        channel_dim: int = 0,
+        remove_origin: bool = False,
+        allow_missing_keys: bool = False,
+        meta_key_postfix='meta_dict',
+    ) -> None:
+        """
+        Args:
+            keys: keys of the corresponding items to be transformed.
+                See also: :py:class:`monai.transforms.compose.MapTransform`
+            output_postfixes: the postfixes to construct keys to store split data.
+                for example: if the key of input data is `pred` and split 2 classes, the output
+                data keys will be: pred_(output_postfixes[0]), pred_(output_postfixes[1])
+                if None, using the index number: `pred_0`, `pred_1`, ... `pred_N`.
+            channel_dim: which dimension of input image is the channel, default to 0.
+            allow_missing_keys: don't raise exception if key is missing.
+
+        """
+        super().__init__(keys, allow_missing_keys)
+        self.output_postfixes = output_postfixes
+        self.output_names = output_names
+        self.remove_origin = remove_origin
+        self.meta_key_postfix = meta_key_postfix
+        self.splitter = SplitChannel(channel_dim=channel_dim)
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        for key in self.key_iterator(d):
+            rets = self.splitter(d[key])
+            postfixes: Sequence = list(range(len(rets))) if self.output_postfixes is None else self.output_postfixes
+            if len(postfixes) != len(rets):
+                raise AssertionError("count of split results must match output_postfixes.")
+            for i, r in enumerate(rets):
+                split_key = f"{key}_{postfixes[i]}" if self.output_names is None else self.output_names[i]
+                if split_key in d:
+                    raise RuntimeError(f"input data already contains key {split_key}.")
+                d[split_key] = r
+                if self.remove_origin:
+                    d[f"{split_key}_{self.meta_key_postfix}"] = d[f"{key}_{self.meta_key_postfix}"]
+            if self.remove_origin:
+                d.pop(key)
+                d.pop(f"{key}_{self.meta_key_postfix}")
+        return d
+
+
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
 DataStatsExD = DataStatsExDict = DataStatsExd
+SplitChannelExD = SplitChannelExDict = SplitChannelExd
