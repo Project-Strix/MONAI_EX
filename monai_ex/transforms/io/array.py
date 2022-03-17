@@ -1,87 +1,94 @@
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""
-A collection of "vanilla" transforms for IO functions
-https://github.com/Project-MONAI/MONAI/wiki/MONAI_Design
-"""
-
-from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, Any
 
 import numpy as np
 
-from monai.utils import optional_import
-# from monai.transforms.io.array import LoadPNG
-
-Image, _ = optional_import("PIL.Image")
+from monai.transforms.transform import Transform
+from monai.data.synthetic import create_test_image_2d, create_test_image_3d
 
 
-# class LoadPNGEx(LoadPNG):
-#     """
-#     Extension of MONAI's LoadPNG
-#     Extended: grayscale
+class GenerateSyntheticData(Transform):
+    def __init__(
+        self,
+        height: int,
+        width: int,
+        depth: Optional[int] = None,
+        num_objs: int = 12,
+        rad_max: int = 30,
+        rad_min: int = 5,
+        noise_max: float = 0.0,
+        num_seg_classes: int = 5,
+        channel_dim: Optional[int] = None,
+        random_state: Optional[np.random.RandomState] = None,
+    ):
+        self.height = height
+        self.width = width
+        self.depth = depth
+        self.num_objs = num_objs
+        self.rad_max = rad_max
+        self.rad_min = rad_min
+        self.noise_max = noise_max
+        self.num_seg_classes = num_seg_classes
+        self.channel_dim = channel_dim
+        self.random_state = random_state
 
-#     Load common 2D image format (PNG, JPG, etc. using PIL) file or files from provided path.
-#     If loading a list of files, stack them together and add a new dimension as first dimension,
-#     and use the meta data of the first image to represent the stacked result.
-#     It's based on the Image module in PIL library:
-#     https://pillow.readthedocs.io/en/stable/reference/Image.html
-#     """
+    def __call__(self, data: Any):
+        if self.depth:
+            img, seg = create_test_image_3d(
+                self.height,
+                self.width,
+                self.depth,
+                self.num_objs,
+                self.rad_max,
+                self.rad_min,
+                self.noise_max,
+                self.num_seg_classes,
+                self.channel_dim,
+                self.random_state,
+            )
+        else:
+            img, seg = create_test_image_2d(
+                self.height,
+                self.width,
+                self.num_objs,
+                self.rad_max,
+                self.rad_min,
+                self.noise_max,
+                self.num_seg_classes,
+                self.channel_dim,
+                self.random_state,
+            )
 
-#     def __init__(self, image_only: bool = False, dtype: Optional[np.dtype] = np.float32, grayscale: bool = False) -> None:
-#         """
-#         Args:
-#             image_only: if True return only the image volume, otherwise return image data array and metadata.
-#             dtype: if not None convert the loaded image to this data type.
-#             grayscale: convert image to grayscale.
-#         """
-#         super(LoadPNGEx, self).__init__(
-#             image_only=image_only,
-#             dtype=dtype
-#         )
-#         self.grayscale = grayscale
+        return img, seg
 
-#     def __call__(self, filename: Union[Sequence[Union[Path, str]], Path, str]):
-#         """
-#         Args:
-#             filename: path file or file-like object or a list of files.
-#         """
-#         filename = ensure_tuple(filename)
-#         img_array = list()
-#         compatible_meta = None
-#         for name in filename:
-#             img = Image.open(name).convert('L') if self.grayscale else Image.open(name)
-#             data = np.asarray(img)
-#             if self.dtype:
-#                 data = data.astype(self.dtype)
-#             img_array.append(data)
 
-#             if self.image_only:
-#                 continue
+class GenerateRandomData(Transform):
+    def __init__(
+        self,
+        height: int,
+        width: int,
+        depth: Optional[int] = None,
+        num_classes: int = 5,
+        channel_dim: Optional[int] = None,
+        random_state: Optional[np.random.RandomState] = None,
+    ):
+        self.height = height
+        self.width = width
+        self.depth = depth
+        self.num_classes = num_classes
+        self.channel_dim = channel_dim
+        self.random_state = random_state
 
-#             meta = dict()
-#             meta["filename_or_obj"] = name
-#             meta["spatial_shape"] = data.shape[:2]
-#             meta["format"] = img.format if img.format is not None else name.split('.')[-1]
-#             meta["mode"] = img.mode
-#             meta["width"] = img.width
-#             meta["height"] = img.height
-#             #meta["info"] = img.info
-#             if not compatible_meta:
-#                 compatible_meta = meta
-#             else:
-#                 assert np.allclose(
-#                     meta["spatial_shape"], compatible_meta["spatial_shape"]
-#                 ), "all the images in the list should have same spatial shape."
+    def __call__(self, data: Any):
+        if self.depth:
+            image = np.random.rand(self.width, self.height, self.depth)
+        else:
+            image = np.random.rand(self.width, self.height)
 
-#         img_array = np.stack(img_array, axis=0) if len(img_array) > 1 else img_array[0]
-#         return img_array if self.image_only else (img_array, compatible_meta)
+        if self.channel_dim is not None:
+            if not (
+                isinstance(self.channel_dim, int) and self.channel_dim in (-1, 0, 3)
+            ):
+                raise AssertionError("invalid channel dim.")
+            image = image[None] if self.channel_dim == 0 else image[..., None]
 
+        return image, np.random.randint(0, self.num_classes + 1)

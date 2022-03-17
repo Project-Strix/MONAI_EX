@@ -23,8 +23,8 @@ from monai.handlers import TensorBoardImageHandler
 if TYPE_CHECKING:
     from ignite.engine import Engine, Events
 else:
-    Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
-    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
+    Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
+    Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
 
 DEFAULT_TAG = "Loss"
 
@@ -99,9 +99,9 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         global_iter_transform: Callable = lambda x: x,
         index: int = 0,
         max_channels: int = 1,
+        frame_dim: int = -1,
         max_frames: int = 64,
         prefix_name: str = "",
-        overlap=False,
     ):
         super().__init__(
             summary_writer=summary_writer,
@@ -113,82 +113,79 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
             global_iter_transform=global_iter_transform,
             index=index,
             max_channels=max_channels,
+            frame_dim=frame_dim,
             max_frames=max_frames,
         )
         self.prefix_name = prefix_name
-        self.overlap = overlap
-        assert self.overlap is False, "Not implemented"
 
     def __call__(self, engine: Engine):
         step = self.global_iter_transform(
             engine.state.epoch if self.epoch_level else engine.state.iteration
         )
-        show_images = self.batch_transform(engine.state.batch)[0]
+        show_images = self.batch_transform(engine.state.batch)[0][self.index]
         if torch.is_tensor(show_images):
             show_images = show_images.detach().cpu().numpy()
         if show_images is not None:
-            if not isinstance(show_images, np.ndarray):
-                raise ValueError(
-                    "output_transform(engine.state.output)[0] must be an ndarray or tensor."
+            if not isinstance(show_images, (np.ndarray, torch.Tensor, list, tuple)):
+                raise TypeError(
+                    "output_transform(engine.state.output)[0] must be None or one of "
+                    f"(numpy.ndarray, torch.Tensor) but is {type(show_images).__name__}."
                 )
             plot_2d_or_3d_image(
-                show_images,
-                step,
-                self._writer,
-                self.index,
-                self.max_channels,
-                self.max_frames,
-                self.prefix_name + "/input_0",
+                # add batch dim and plot the first item
+                data=show_images[None],
+                step=step,
+                writer=self._writer,
+                index=0,
+                max_channels=self.max_channels,
+                frame_dim=self.frame_dim,
+                max_frames=self.max_frames,
+                tag=self.prefix_name + "/input_0",
             )
 
-        show_labels = self.batch_transform(engine.state.batch)[1]
-        if torch.is_tensor(show_labels):
+        show_labels = self.batch_transform(engine.state.batch)[1][self.index]
+        if isinstance(show_labels, torch.Tensor):
             show_labels = show_labels.detach().cpu().numpy()
         if show_labels is not None:
             if not isinstance(show_labels, np.ndarray):
-                raise ValueError(
-                    "batch_transform(engine.state.batch)[1] must be an ndarray or tensor."
+                raise TypeError(
+                    "batch_transform(engine.state.batch)[1] must be None or one of "
+                    f"(numpy.ndarray, torch.Tensor) but is {type(show_labels).__name__}."
                 )
-            if self.overlap:
-                pass
-                # add_3D_overlay_to_summary(self._writer, show_labels[0], show_images[0], name=self.prefix_name+"/input_1_overlay")
-            else:
-                plot_2d_or_3d_image(
-                    show_labels,
-                    step,
-                    self._writer,
-                    self.index,
-                    self.max_channels,
-                    self.max_frames,
-                    self.prefix_name + "/input_1",
-                )
+            plot_2d_or_3d_image(
+                data=show_labels[None],
+                step=step,
+                writer=self._writer,
+                index=0,
+                max_channels=self.max_channels,
+                frame_dim=self.frame_dim,
+                max_frames=self.max_frames,
+                tag=self.prefix_name + "/input_1",
+            )
 
-        show_outputs = self.output_transform(engine.state.output)
-        #! tmp solution to handle multi-inputs
+        show_outputs = self.output_transform(engine.state.output)[self.index]
+        # ! tmp solution to handle multi-inputs
         if isinstance(show_outputs, (list, tuple)):
             show_outputs = show_outputs[0]
 
-        if torch.is_tensor(show_outputs):
+        if isinstance(show_outputs, torch.Tensor):
             show_outputs = show_outputs.detach().cpu().numpy()
         if show_outputs is not None:
             if not isinstance(show_outputs, np.ndarray):
-                raise ValueError(
-                    "output_transform(engine.state.output) must be an ndarray "
-                    f"or tensor, but got '{type(show_outputs)}'"
+                raise TypeError(
+                    "output_transform(engine.state.output) must be None or one of "
+                    f"(numpy.ndarray, torch.Tensor) but is {type(show_outputs).__name__}."
                 )
-            if self.overlap:
-                pass
-                # add_3D_overlay_to_summary(self._writer, show_outputs[0], show_images[0], name=self.prefix_name+"/output_overlap")
-            else:
-                plot_2d_or_3d_image(
-                    show_outputs,
-                    step,
-                    self._writer,
-                    self.index,
-                    self.max_channels,
-                    self.max_frames,
-                    self.prefix_name + "/output",
-                )
+            plot_2d_or_3d_image(
+                data=show_outputs[None],
+                step=step,
+                writer=self._writer,
+                index=0,
+                max_channels=self.max_channels,
+                frame_dim=self.frame_dim,
+                max_frames=self.max_frames,
+                tag=self.prefix_name + "/output",
+            )
 
         self._writer.flush()
 

@@ -19,6 +19,9 @@ class CustomKeys:
     LOSS: str = "loss"
     INFO: str = "info"
     LATENT: str = "latent"
+    ATT: str = "attention"
+    FORWARD: str = "acti"
+    BACKWARD: str = "grad"
 
 
 class RcnnKeys:

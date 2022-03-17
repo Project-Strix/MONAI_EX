@@ -3,11 +3,11 @@ from typing import TYPE_CHECKING, Callable, Optional
 from monai.utils import ensure_tuple, exact_version, optional_import
 from monai.handlers import LrScheduleHandler
 
-Events, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Events")
+Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
 if TYPE_CHECKING:
     from ignite.engine import Engine
 else:
-    Engine, _ = optional_import("ignite.engine", "0.4.4", exact_version, "Engine")
+    Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
 
 
 class LrScheduleTensorboardHandler(LrScheduleHandler):

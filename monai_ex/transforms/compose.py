@@ -12,19 +12,27 @@ from monai.utils import ensure_tuple, get_seed
 
 
 class RandomSelect(Randomizable):
-    def __init__(self, transforms: Optional[Union[Sequence[Callable], Callable]] = None, prob: float = 0.5) -> None:
+    def __init__(
+        self,
+        transforms: Optional[Union[Sequence[Callable], Callable]] = None,
+        prob: float = 0.5,
+    ) -> None:
         if transforms is None:
             transforms = []
         self.transforms = ensure_tuple(transforms)
         self.set_random_state(seed=get_seed())
         self.prob = prob
 
-    def set_random_state(self, seed: Optional[int] = None, state: Optional[np.random.RandomState] = None) -> "Compose":
+    def set_random_state(
+        self, seed: Optional[int] = None, state: Optional[np.random.RandomState] = None
+    ) -> "Compose":
         super().set_random_state(seed=seed, state=state)
         for _transform in self.transforms:
             if not isinstance(_transform, Randomizable):
                 continue
-            _transform.set_random_state(seed=self.R.randint(low=0, high=np.iinfo(np.uint32).max, dtype="uint32"))
+            _transform.set_random_state(
+                seed=self.R.randint(low=0, high=np.iinfo(np.uint32).max, dtype="uint32")
+            )
         return self
 
     def randomize(self, data: Optional[Any] = None) -> None:
@@ -40,10 +48,29 @@ class RandomSelect(Randomizable):
 
 
 class ComposeEx(Compose):
-    def __init__(self, transforms: Optional[Union[Sequence[Callable], Callable]] = None) -> None:
+    def __init__(
+        self,
+        transforms: Optional[Union[Sequence[Callable], Callable]] = None,
+        map_items: bool = True,
+        unpack_items: bool = False,
+        first: bool = False
+    ) -> None:
         super(ComposeEx, self).__init__(
-            transforms=transforms
+            transforms=transforms,
+            map_items=map_items,
+            unpack_items=unpack_items,
         )
+        self.first = first
 
-    def add_transforms(self, transforms: Optional[Union[Sequence[Callable], Callable]]) -> None:
+    def add_transforms(
+        self, transforms: Optional[Union[Sequence[Callable], Callable]]
+    ) -> None:
         self.transforms += ensure_tuple(transforms)
+
+    def __call__(self, input_):
+        for _transform in self.transforms:
+            input_ = apply_transform(_transform, input_, self.map_items, self.unpack_items)
+
+        if self.first:
+            return input_[0]
+        return input_
