@@ -15,7 +15,7 @@ from monai_ex.transforms.utility.array import (
     ToTensorEx,
     DataStatsEx,
     DataLabelling,
-    Clahe,
+    RandLabelToMask,
 )
 
 from monai_ex.transforms import (
@@ -222,24 +222,6 @@ class DataLabellingd(MapTransform):
         return d
 
 
-class Clahed(MapTransform):
-    def __init__(
-        self, keys: KeysCollection, kernel_size=None, clip_limit=0.01, nbins=256
-    ) -> None:
-        super().__init__(keys)
-        self.converter = Clahe()
-        self.kernel_size = kernel_size
-        self.clip_limit = clip_limit
-        self.nbins = nbins
-
-    def __call__(
-        self, img: Mapping[Hashable, torch.Tensor]
-    ) -> Dict[Hashable, torch.Tensor]:
-        d = dict(img)
-        for idx, key in enumerate(self.keys):
-            d[key] = self.converter(d[key])
-        return d
-
 
 class ConcatModalityd(MapTransform):
     """Concat multi-modality data by given keys."""
@@ -386,11 +368,67 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         return results
 
 
+class RandLabelToMaskd(Randomizable, MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`monai_ex.transforms.RandLabelToMask`.
+
+    Args:
+        keys: keys of the corresponding items to be transformed.
+            See also: :py:class:`monai.transforms.compose.MapTransform`
+        select_labels: labels to generate mask from. for 1 channel label, the `select_labels`
+            is the expected label values, like: [1, 2, 3]. for One-Hot format label, the
+            `select_labels` is the expected channel indices.
+        merge_channels: whether to use `np.any()` to merge the result on channel dim.
+            if yes, will return a single channel mask with binary data.
+
+    """
+
+    def __init__(  # pytype: disable=annotation-type-mismatch
+        self,
+        keys: KeysCollection,
+        select_labels: Union[Sequence[int], int],
+        merge_channels: bool = False,
+        cls_label_key: Optional[KeysCollection] = None,
+        select_msk_label: Optional[int] = None, #! for tmp debug
+    ) -> None:
+        super().__init__(keys)
+        self.select_labels = select_labels
+        self.cls_label_key = cls_label_key
+        self.select_label = select_msk_label
+        self.converter = RandLabelToMask(select_labels=select_labels, merge_channels=merge_channels)
+
+    def randomize(self):
+        self.select_label = self.R.choice(self.select_labels, 1)[0]
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        if self.select_label is None:
+            self.randomize()
+
+        if self.cls_label_key is not None:
+            label = d[self.cls_label_key]
+            assert len(label) == len(self.select_labels), 'length of cls_label_key must equal to length of mask select_labels'
+
+            if isinstance(label, (list, tuple)):
+                label = { i:L for i, L in enumerate(label, 1)}
+            elif isinstance(label, (int, float)):
+                label = {1:label}
+            assert isinstance(label, dict), 'Only support dict type label'
+            
+            d[self.cls_label_key] = label[self.select_label]
+
+        for key in self.keys:
+            d[key] = self.converter(d[key], select_label=self.select_label)
+
+        return d
+
+
+
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
 DataStatsExD = DataStatsExDict = DataStatsExd
 SplitChannelExD = SplitChannelExDict = SplitChannelExd
 DataLabellinD = DataLabellingDict = DataLabellingd
-ClaheD = ClaheDict = Clahed
 ConcatModalityD = ConcatModalityDict = ConcatModalityd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
+RandLabelToMaskD = RandLabelToMaskDict = RandLabelToMaskd

@@ -8,12 +8,7 @@ from scipy import ndimage as ndi
 from monai.transforms.compose import Transform
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.config import NdarrayTensor, DtypeLike
-from monai_ex.utils import convert_data_type_ex, optional_import
-
-# Need NNI package
-skimage, has_skimage = optional_import("skimage", "0.12")
-if has_skimage:
-    from skimage import exposure
+from monai_ex.utils import convert_data_type_ex
 
 
 class CastToTypeEx(CastToType):
@@ -157,31 +152,64 @@ class DataLabelling(Transform):
         return ccs
 
 
-class Clahe(Transform):
-    def __init__(self, kernel_size=None, clip_limit=0.01, nbins=256) -> None:
-        self.kernel_size = kernel_size
-        self.clip_limit = clip_limit
-        self.nbins = nbins
-        if not has_skimage:
-            raise ImportError("Please install scikit-image to use CLAHE.")
+class RandLabelToMask(Randomizable, Transform):
+    """
+    Convert labels to mask for other tasks. A typical usage is to convert segmentation labels
+    to mask data to pre-process images and then feed the images into classification network.
+    It can support single channel labels or One-Hot labels with specified `select_labels`.
+    For example, users can select `label value = [2, 3]` to construct mask data, or select the
+    second and the third channels of labels to construct mask data.
+    The output mask data can be a multiple channels binary data or a single channel binary
+    data that merges all the channels.
 
-    def __call__(self, img: np.ndarray) -> np.ndarray:
-        input_ndim = img.squeeze().ndim  # spatial ndim
-        assert input_ndim in [2, 3], "Currently only support 2D&3D data"
+    Args:
+        select_labels: labels to generate mask from. for 1 channel label, the `select_labels`
+            is the expected label values, like: [1, 2, 3]. for One-Hot format label, the
+            `select_labels` is the expected channel indices.
+        merge_channels: whether to use `np.any()` to merge the result on channel dim. if yes,
+            will return a single channel mask with binary data.
 
-        channel_dim = None
-        if input_ndim != img.ndim:
-            channel_dim = img.shape.index(1)
-            img = img.squeeze()
+    """
 
-        filter_img = exposure.equalize_adapthist(
-            img,
-            kernel_size=self.kernel_size,
-            clip_limit=self.clip_limit,
-            nbins=self.nbins,
-        )
+    def __init__(  # pytype: disable=annotation-type-mismatch
+        self,
+        select_labels: Union[Sequence[int], int],
+        merge_channels: bool = False,
+    ) -> None:  # pytype: disable=annotation-type-mismatch
+        self.select_labels = ensure_tuple(select_labels)
+        self.merge_channels = merge_channels
 
-        if channel_dim is not None:
-            return np.expand_dims(filter_img, axis=channel_dim)
+    def randomize(self):
+        self.select_label = self.R.choice(self.select_labels, 1)[0]
+
+    def __call__(
+        self,
+        img: np.ndarray,
+        select_label: Optional[Union[Sequence[int], int]] = None,
+        merge_channels: bool = False,
+    ) -> np.ndarray:
+        """
+        Args:
+            select_labels: labels to generate mask from. for 1 channel label, the `select_labels`
+                is the expected label values, like: [1, 2, 3]. for One-Hot format label, the
+                `select_labels` is the expected channel indices.
+            merge_channels: whether to use `np.any()` to merge the result on channel dim. if yes,
+                will return a single channel mask with binary data.
+        """
+        if select_label is None:
+            self.randomize()
         else:
-            return filter_img
+            self.select_label = select_label
+
+        if img.shape[0] > 1:
+            data = img[[self.select_label]]
+        else:
+            data = np.where(np.in1d(img, self.select_label), True, False).reshape(
+                img.shape
+            )
+
+        return (
+            np.any(data, axis=0, keepdims=True)
+            if (merge_channels or self.merge_channels)
+            else data
+        )
