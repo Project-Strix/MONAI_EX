@@ -122,70 +122,76 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         step = self.global_iter_transform(
             engine.state.epoch if self.epoch_level else engine.state.iteration
         )
-        show_images = self.batch_transform(engine.state.batch)[0][self.index]
-        if torch.is_tensor(show_images):
-            show_images = show_images.detach().cpu().numpy()
-        if show_images is not None:
-            if not isinstance(show_images, (np.ndarray, torch.Tensor, list, tuple)):
-                raise TypeError(
-                    "output_transform(engine.state.output)[0] must be None or one of "
-                    f"(numpy.ndarray, torch.Tensor) but is {type(show_images).__name__}."
+        image_tensor = self.batch_transform(engine.state.batch)[0]
+        label_tensor = self.batch_transform(engine.state.batch)[1]
+        
+        if image_tensor:
+            show_images = image_tensor[self.index]
+            if torch.is_tensor(show_images):
+                show_images = show_images.detach().cpu().numpy()
+            if show_images is not None:
+                if not isinstance(show_images, (np.ndarray, torch.Tensor, list, tuple)):
+                    raise TypeError(
+                        "output_transform(engine.state.output)[0] must be None or one of "
+                        f"(numpy.ndarray, torch.Tensor) but is {type(show_images).__name__}."
+                    )
+                plot_2d_or_3d_image(
+                    # add batch dim and plot the first item
+                    data=show_images[None],
+                    step=step,
+                    writer=self._writer,
+                    index=0,
+                    max_channels=self.max_channels,
+                    frame_dim=self.frame_dim,
+                    max_frames=self.max_frames,
+                    tag=self.prefix_name + "/input_0",
                 )
-            plot_2d_or_3d_image(
-                # add batch dim and plot the first item
-                data=show_images[None],
-                step=step,
-                writer=self._writer,
-                index=0,
-                max_channels=self.max_channels,
-                frame_dim=self.frame_dim,
-                max_frames=self.max_frames,
-                tag=self.prefix_name + "/input_0",
-            )
-
-        show_labels = self.batch_transform(engine.state.batch)[1][self.index]
-        if isinstance(show_labels, torch.Tensor):
-            show_labels = show_labels.detach().cpu().numpy()
-        if show_labels is not None:
-            if not isinstance(show_labels, np.ndarray):
-                raise TypeError(
-                    "batch_transform(engine.state.batch)[1] must be None or one of "
-                    f"(numpy.ndarray, torch.Tensor) but is {type(show_labels).__name__}."
+        
+        if label_tensor:
+            show_labels = label_tensor[self.index]
+            if isinstance(show_labels, torch.Tensor):
+                show_labels = show_labels.detach().cpu().numpy()
+            if show_labels is not None:
+                if not isinstance(show_labels, np.ndarray):
+                    raise TypeError(
+                        "batch_transform(engine.state.batch)[1] must be None or one of "
+                        f"(numpy.ndarray, torch.Tensor) but is {type(show_labels).__name__}."
+                    )
+                plot_2d_or_3d_image(
+                    data=show_labels[None],
+                    step=step,
+                    writer=self._writer,
+                    index=0,
+                    max_channels=self.max_channels,
+                    frame_dim=self.frame_dim,
+                    max_frames=self.max_frames,
+                    tag=self.prefix_name + "/input_1",
                 )
-            plot_2d_or_3d_image(
-                data=show_labels[None],
-                step=step,
-                writer=self._writer,
-                index=0,
-                max_channels=self.max_channels,
-                frame_dim=self.frame_dim,
-                max_frames=self.max_frames,
-                tag=self.prefix_name + "/input_1",
-            )
 
-        show_outputs = self.output_transform(engine.state.output)[self.index]
-        # ! tmp solution to handle multi-inputs
-        if isinstance(show_outputs, (list, tuple)):
-            show_outputs = show_outputs[0]
+        if self.output_transform(engine.state.output):
+            show_outputs = self.output_transform(engine.state.output)[self.index]
+            # ! tmp solution to handle multi-inputs
+            if isinstance(show_outputs, (list, tuple)):
+                show_outputs = show_outputs[0]
 
-        if isinstance(show_outputs, torch.Tensor):
-            show_outputs = show_outputs.detach().cpu().numpy()
-        if show_outputs is not None:
-            if not isinstance(show_outputs, np.ndarray):
-                raise TypeError(
-                    "output_transform(engine.state.output) must be None or one of "
-                    f"(numpy.ndarray, torch.Tensor) but is {type(show_outputs).__name__}."
+            if isinstance(show_outputs, torch.Tensor):
+                show_outputs = show_outputs.detach().cpu().numpy()
+            if show_outputs is not None:
+                if not isinstance(show_outputs, np.ndarray):
+                    raise TypeError(
+                        "output_transform(engine.state.output) must be None or one of "
+                        f"(numpy.ndarray, torch.Tensor) but is {type(show_outputs).__name__}."
+                    )
+                plot_2d_or_3d_image(
+                    data=show_outputs[None],
+                    step=step,
+                    writer=self._writer,
+                    index=0,
+                    max_channels=self.max_channels,
+                    frame_dim=self.frame_dim,
+                    max_frames=self.max_frames,
+                    tag=self.prefix_name + "/output",
                 )
-            plot_2d_or_3d_image(
-                data=show_outputs[None],
-                step=step,
-                writer=self._writer,
-                index=0,
-                max_channels=self.max_channels,
-                frame_dim=self.frame_dim,
-                max_frames=self.max_frames,
-                tag=self.prefix_name + "/output",
-            )
 
         self._writer.flush()
 
