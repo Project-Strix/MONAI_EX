@@ -2,7 +2,7 @@ from setuptools import setup, find_namespace_packages
 
 setup(name='monai_ex',
       packages=find_namespace_packages(include=["monai_ex", "monai_ex.*"]),
-      version='0.0.3',
+      version='0.0.4',
       description='MONAI extension',
       author='Chenglong Wang',
       author_email='clwang@phy.ecnu.edu.cn',
