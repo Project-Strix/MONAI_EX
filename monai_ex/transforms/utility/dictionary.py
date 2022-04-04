@@ -1,19 +1,29 @@
 import logging
-from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Union
+from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Union, List
 
 import numpy as np
 import torch
 
 from monai.config import KeysCollection, NdarrayTensor, NdarrayOrTensor
-from monai.transforms.compose import MapTransform
+from monai.transforms.compose import MapTransform, Randomizable
 from monai.utils import ensure_tuple_rep
+from monai_ex.utils import ensure_list
 
 from monai.transforms import SplitChannel
 from monai_ex.transforms.utility.array import (
     CastToTypeEx,
     ToTensorEx,
-    DataStatsEx
+    DataStatsEx,
+    DataLabelling,
+    RandLabelToMask,
 )
+
+from monai_ex.transforms import (
+    generate_pos_neg_label_crop_centers,
+    map_binary_to_indices,
+    SpatialCrop,
+)
+
 
 class CastToTypeExd(MapTransform):
     """
@@ -23,7 +33,9 @@ class CastToTypeExd(MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
-        dtype: Union[Sequence[Union[np.dtype, torch.dtype, str]], np.dtype, torch.dtype, str] = np.float32,
+        dtype: Union[
+            Sequence[Union[np.dtype, torch.dtype, str]], np.dtype, torch.dtype, str
+        ] = np.float32,
     ) -> None:
         """
         Args:
@@ -62,7 +74,9 @@ class ToTensorExd(MapTransform):
         super().__init__(keys)
         self.converter = ToTensorEx()
 
-    def __call__(self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]) -> Dict[Hashable, torch.Tensor]:
+    def __call__(
+        self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]
+    ) -> Dict[Hashable, torch.Tensor]:
         d = dict(data)
         for key in self.keys:
             d[key] = self.converter(d[key])
@@ -73,6 +87,7 @@ class DataStatsExd(MapTransform):
     """
     Dictionary-based wrapper of :py:class:`monai_ex.transforms.DataStatsEx`.
     """
+
     def __init__(
         self,
         keys: KeysCollection,
@@ -97,14 +112,30 @@ class DataStatsExd(MapTransform):
         self.logger_handler = logger_handler
         self.printer = DataStatsEx(logger_handler=logger_handler)
 
-    def __call__(self, data: Mapping[Hashable, NdarrayTensor]) -> Dict[Hashable, NdarrayTensor]:
+    def __call__(
+        self, data: Mapping[Hashable, NdarrayTensor]
+    ) -> Dict[Hashable, NdarrayTensor]:
         d = dict(data)
-        for key, prefix, data_type, data_shape, value_range, data_value, additional_info in self.key_iterator(
-            d, self.prefix, self.data_type, self.data_shape, self.value_range, self.data_value, self.additional_info
+        for (
+            key,
+            prefix,
+            data_type,
+            data_shape,
+            value_range,
+            data_value,
+            additional_info,
+        ) in self.key_iterator(
+            d,
+            self.prefix,
+            self.data_type,
+            self.data_shape,
+            self.value_range,
+            self.data_value,
+            self.additional_info,
         ):
             d[key] = self.printer(
                 d[key],
-                d[f'{key}_{self.meta_key_postfix}'],
+                d[f"{key}_{self.meta_key_postfix}"],
                 prefix,
                 data_type,
                 data_shape,
@@ -174,8 +205,230 @@ class SplitChannelExd(MapTransform):
                 d.pop(f"{key}_{self.meta_key_postfix}")
         return d
 
+class DataLabellingd(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+    ) -> None:
+        super().__init__(keys)
+        self.converter = DataLabelling()
+
+    def __call__(
+        self, img: Mapping[Hashable, torch.Tensor]
+    ) -> Dict[Hashable, torch.Tensor]:
+        d = dict(img)
+        for idx, key in enumerate(self.keys):
+            d[key] = self.converter(d[key])
+        return d
+
+
+
+class ConcatModalityd(MapTransform):
+    """Concat multi-modality data by given keys."""
+
+    def __init__(self, keys, output_key, axis):
+        super().__init__(keys)
+        self.output_key = output_key
+        self.axis = axis
+
+    def __call__(self, data):
+        d = dict(data)
+        concat_data = np.concatenate([d[key] for key in self.keys], axis=self.axis)
+        d[self.output_key] = concat_data
+
+        return d
+
+
+class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
+    def __init__(
+        self,
+        n_layer: int,
+        keys: KeysCollection,
+        label_key: str,
+        spatial_size: Union[Sequence[int], int],
+        crop_mode: str,
+        z_axis: int,
+        pos: float = 1.0,
+        neg: float = 0.0,
+        num_samples: int = 1,
+        image_key: Optional[str] = None,
+        image_threshold: float = 0.0,
+        fg_indices_key: Optional[str] = None,
+        bg_indices_key: Optional[str] = None,
+    ) -> None:
+        super().__init__(keys)
+        self.spatial_size = ensure_tuple_rep(spatial_size, 2)
+        self.label_key = label_key
+        self.num_samples = num_samples
+        self.image_key = image_key
+        self.image_threshold = image_threshold
+        self.centers: Optional[List[List[np.ndarray]]] = None
+        self.fg_indices_key = fg_indices_key
+        self.bg_indices_key = bg_indices_key
+        self.n_layer = n_layer
+
+        if pos < 0 or neg < 0:
+            raise ValueError(
+                f"pos and neg must be nonnegative, got pos={pos} neg={neg}."
+            )
+        if pos + neg == 0:
+            raise ValueError("Incompatible values: pos=0 and neg=0.")
+        self.pos_ratio = pos / (pos + neg)
+        if crop_mode not in ["single", "cross", "parallel"]:
+            raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
+        self.crop_mode = crop_mode
+        self.z_axis = z_axis
+
+    def get_new_spatial_size(self):
+        spatial_size_ = ensure_list(self.spatial_size)
+        if self.crop_mode == "single":
+            spatial_size_.insert(self.z_axis, 1)
+        elif self.crop_mode == "parallel":
+            spatial_size_.insert(self.z_axis, self.n_layer)
+        else:
+            spatial_size_ = [
+                max(spatial_size_),
+            ] * 3
+
+        return spatial_size_
+
+    def randomize(
+        self,
+        label: np.ndarray,
+        fg_indices: Optional[np.ndarray] = None,
+        bg_indices: Optional[np.ndarray] = None,
+        image: Optional[np.ndarray] = None,
+    ) -> None:
+        if fg_indices is None or bg_indices is None:
+            fg_indices_, bg_indices_ = map_binary_to_indices(
+                label, image, self.image_threshold
+            )
+        else:
+            fg_indices_ = fg_indices
+            bg_indices_ = bg_indices
+
+        self.centers = generate_pos_neg_label_crop_centers(
+            self.get_new_spatial_size(),
+            self.num_samples,
+            self.pos_ratio,
+            label.shape[1:],
+            fg_indices_,
+            bg_indices_,
+            self.R,
+        )
+
+    def __call__(
+        self, data: Mapping[Hashable, np.ndarray]
+    ) -> List[Dict[Hashable, np.ndarray]]:
+        d = dict(data)
+        label = d[self.label_key]
+        image = d[self.image_key] if self.image_key else None
+        fg_indices = (
+            d.get(self.fg_indices_key, None)
+            if self.fg_indices_key is not None
+            else None
+        )
+        bg_indices = (
+            d.get(self.bg_indices_key, None)
+            if self.bg_indices_key is not None
+            else None
+        )
+
+        self.randomize(label, fg_indices, bg_indices, image)
+        assert isinstance(self.spatial_size, tuple)
+        assert self.centers is not None
+        results: List[Dict[Hashable, np.ndarray]] = [
+            dict() for _ in range(self.num_samples)
+        ]
+        for key in data.keys():
+            if key in self.keys:
+                img = d[key]
+                for i, center in enumerate(self.centers):
+                    if self.crop_mode in ["single", "parallel"]:
+                        size_ = self.get_new_spatial_size()
+                        slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(
+                            img
+                        )
+
+                        seg_sum = slice_.squeeze().sum()
+                        results[i][key] = np.moveaxis(slice_.squeeze(0), self.z_axis, 0)
+                    else:
+                        cross_slices = np.zeros(shape=(3,) + self.spatial_size)
+                        for k in range(3):
+                            size_ = np.insert(self.spatial_size, k, 1)
+                            slice_ = SpatialCrop(
+                                roi_center=tuple(center), roi_size=size_
+                            )(img)
+                            cross_slices[k] = slice_.squeeze()
+                        results[i][key] = cross_slices
+            else:
+                for i in range(self.num_samples):
+                    results[i][key] = data[key]
+
+        return results
+
+
+class RandLabelToMaskd(Randomizable, MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`monai_ex.transforms.RandLabelToMask`.
+
+    Args:
+        keys: keys of the corresponding items to be transformed.
+            See also: :py:class:`monai.transforms.compose.MapTransform`
+        select_labels: labels to generate mask from. for 1 channel label, the `select_labels`
+            is the expected label values, like: [1, 2, 3]. for One-Hot format label, the
+            `select_labels` is the expected channel indices.
+        merge_channels: whether to use `np.any()` to merge the result on channel dim.
+            if yes, will return a single channel mask with binary data.
+
+    """
+
+    def __init__(  # pytype: disable=annotation-type-mismatch
+        self,
+        keys: KeysCollection,
+        select_labels: Union[Sequence[int], int],
+        merge_channels: bool = False,
+        cls_label_key: Optional[KeysCollection] = None,
+        select_msk_label: Optional[int] = None, #! for tmp debug
+    ) -> None:
+        super().__init__(keys)
+        self.select_labels = select_labels
+        self.cls_label_key = cls_label_key
+        self.select_label = select_msk_label
+        self.converter = RandLabelToMask(select_labels=select_labels, merge_channels=merge_channels)
+
+    def randomize(self):
+        self.select_label = self.R.choice(self.select_labels, 1)[0]
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        if self.select_label is None:
+            self.randomize()
+
+        if self.cls_label_key is not None:
+            label = d[self.cls_label_key]
+            assert len(label) == len(self.select_labels), 'length of cls_label_key must equal to length of mask select_labels'
+
+            if isinstance(label, (list, tuple)):
+                label = { i:L for i, L in enumerate(label, 1)}
+            elif isinstance(label, (int, float)):
+                label = {1:label}
+            assert isinstance(label, dict), 'Only support dict type label'
+            
+            d[self.cls_label_key] = label[self.select_label]
+
+        for key in self.keys:
+            d[key] = self.converter(d[key], select_label=self.select_label)
+
+        return d
+
+
 
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
 DataStatsExD = DataStatsExDict = DataStatsExd
 SplitChannelExD = SplitChannelExDict = SplitChannelExd
+DataLabellinD = DataLabellingDict = DataLabellingd
+ConcatModalityD = ConcatModalityDict = ConcatModalityd
+RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
+RandLabelToMaskD = RandLabelToMaskDict = RandLabelToMaskd

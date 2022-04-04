@@ -4,14 +4,15 @@ defined in :py:class:`monai.transforms.intensity.array`.
 
 Class names are ended with 'd' to denote dictionary-based transforms.
 """
-from typing import Dict, Hashable, Mapping
+import torch
+from typing import Dict, Hashable, Mapping, Optional
 
 import numpy as np
 
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
-from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter
+from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe
 
 
 class ScaleIntensityByDicomInfod(MapTransform):
@@ -34,7 +35,7 @@ class ScaleIntensityByDicomInfod(MapTransform):
         win_width_key: str,
         b_min: float = 0,
         b_max: float = 1,
-        clip: bool = False
+        clip: bool = False,
     ) -> None:
         super().__init__(keys)
         self.win_center_key = win_center_key
@@ -43,14 +44,26 @@ class ScaleIntensityByDicomInfod(MapTransform):
         self.b_max = b_max
         self.clip = clip
 
-    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+    def __call__(
+        self, data: Mapping[Hashable, np.ndarray]
+    ) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for key in self.keys:
-            assert self.win_center_key in d[key+'_meta_dict'], f"{key+'_meta_dict'} must contain key '{self.win_center_key}'"
-            assert self.win_width_key in d[key+'_meta_dict'], f"{key+'_meta_dict'} must contain key '{self.win_width_key}'"
-            win_center = float(d[key+'_meta_dict'][self.win_center_key])
-            win_width  = float(d[key+'_meta_dict'][self.win_width_key])
-            scaler = ScaleIntensityRange(win_center-win_width/2, win_center+win_width/2, self.b_min, self.b_max, self.clip)
+            assert (
+                self.win_center_key in d[key + "_meta_dict"]
+            ), f"{key+'_meta_dict'} must contain key '{self.win_center_key}'"
+            assert (
+                self.win_width_key in d[key + "_meta_dict"]
+            ), f"{key+'_meta_dict'} must contain key '{self.win_width_key}'"
+            win_center = float(d[key + "_meta_dict"][self.win_center_key])
+            win_width = float(d[key + "_meta_dict"][self.win_width_key])
+            scaler = ScaleIntensityRange(
+                win_center - win_width / 2,
+                win_center + win_width / 2,
+                self.b_min,
+                self.b_max,
+                self.clip,
+            )
             d[key] = scaler(d[key])
         return d
 
@@ -69,12 +82,16 @@ class MaskIntensityExd(MapTransform):
 
     """
 
-    def __init__(self, keys: KeysCollection, mask_key: KeysCollection, fill_mode='zero') -> None:
+    def __init__(
+        self, keys: KeysCollection, mask_key: KeysCollection, fill_mode="zero"
+    ) -> None:
         super().__init__(keys)
         self.mask_key = mask_key
         self.converter = MaskIntensity(mask_data=np.array([]))
 
-    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+    def __call__(
+        self, data: Mapping[Hashable, np.ndarray]
+    ) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         mask_data = d[self.mask_key]
         for key in self.keys:
@@ -88,6 +105,7 @@ class ClipIntensityd(MapTransform):
     Args:
         MapTransform ([type]): [description]
     """
+
     def __init__(self, keys, cmin: float, cmax: float):
         super().__init__(keys)
         self.clipper = ClipIntensity(cmin, cmax)
@@ -105,11 +123,14 @@ class MedianFilterd(MapTransform):
     Args:
         MapTransform ([type]): [description]
     """
-    def __init__(self, keys, size, mode='reflect', cval=0.0, origin=0):
+
+    def __init__(self, keys, size, mode="reflect", cval=0.0, origin=0):
         super(MedianFilterd, self).__init__(keys)
         self.converter = MedianFilter(size, mode=mode, cval=cval, origin=origin)
 
-    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+    def __call__(
+        self, data: Mapping[Hashable, np.ndarray]
+    ) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for _, key in enumerate(self.keys):
             d[key] = self.converter(d[key])
@@ -119,15 +140,46 @@ class MedianFilterd(MapTransform):
 class RandLocalPixelShuffled(MapTransform, Randomizable):
     def __init__(self, keys: KeysCollection):
         raise NotImplementedError
+
+
 class RandImageInpaintingd(MapTransform, Randomizable):
     def __init__(self, keys: KeysCollection):
         raise NotImplementedError
+
+
 class RandImageOutpaintingd(MapTransform, Randomizable):
     def __init__(self, keys: KeysCollection):
         raise NotImplementedError
+
+
 class RandNonlineard(MapTransform, Randomizable):
     def __init__(self, keys: KeysCollection):
         raise NotImplementedError
+
+
+class Clahed(MapTransform):
+    """Dictionary-based wrapper of :py:class:`monai_ex.transforms.Clahe`."""
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        kernel_size: Optional[int] = None,
+        clip_limit: float = 0.01,
+        nbins: int = 256,
+    ) -> None:
+        super().__init__(keys)
+        self.converter = Clahe()
+        self.kernel_size = kernel_size
+        self.clip_limit = clip_limit
+        self.nbins = nbins
+
+    def __call__(
+        self, img: Mapping[Hashable, torch.Tensor]
+    ) -> Dict[Hashable, torch.Tensor]:
+        d = dict(img)
+        for idx, key in enumerate(self.keys):
+            d[key] = self.converter(d[key])
+        return d
 
 
 ScaleIntensityByDicomInfoD = ScaleIntensityByDicomInfoDict = ScaleIntensityByDicomInfod
@@ -138,3 +190,4 @@ RandImageOutpaintingD = RandImageOutpaintingDict = RandImageOutpaintingd
 RandNonlinearD = RandNonlinearDict = RandNonlineard
 ClipIntensityD = ClipIntensityDict = ClipIntensityd
 MedianFilterD = MedianFilterDict = MedianFilterd
+ClaheD = ClaheDict = Clahed

@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 from monai.config import KeysCollection
-from monai.transforms.compose import MapTransform, Transform, Randomizable
+from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.utils import (
     map_binary_to_indices,
     generate_pos_neg_label_crop_centers,
@@ -15,7 +15,6 @@ from monai.utils import fall_back_tuple
 
 from monai_ex.utils import ImageMetaKey as Key
 from monai_ex.utils import (
-    fall_back_tuple,
     ensure_list,
     ensure_list_rep,
     ensure_tuple_rep,
@@ -25,7 +24,6 @@ from monai_ex.transforms.croppad.array import (
     FullMask2DSliceCrop,
     GetMaxSlices3direcCrop,
     KSpaceResample,
-    RandCenterSpatialCrop
 )
 
 
@@ -131,6 +129,7 @@ class GetMaxSlices3direcCropd(MapTransform):
         for key in self.keys:
             d[key] = self.cropper(d[key], d[self.mask_key])
         return d
+
 
 class FullImage2DSliceCropd(MapTransform):
     def __init__(
@@ -503,6 +502,7 @@ class KSpaceResampled(MapTransform):
             meta_data["affine"] = new_affine
         return d
 
+
 class RandCenterSpatialCropd(Randomizable, MapTransform):
     """
     Dictionary-based wrapper of :py:class:`monai.transforms.CenterSpatialCrop`.
@@ -572,6 +572,65 @@ class RandCenterSpatialCropd(Randomizable, MapTransform):
             cropper = SpatialCrop(roi_center=self.center, roi_size=self.roi_size)
             d[key] = cropper(d[key])
         return d
+
+
+class RandCropSliceD(Randomizable, MapTransform):
+    def __init__(
+        self,
+        keys,
+        mask_key,
+        mode,
+        pos: float = 1.0,
+        neg: float = 1.0,
+        spatial_size=None,
+        num_samples=1,
+        axis=0
+    ):
+        super().__init__(keys)
+        if pos < 0 or neg < 0:
+            raise ValueError(f"pos and neg must be nonnegative, got pos={pos} neg={neg}.")
+        if pos + neg == 0:
+            raise ValueError("Incompatible values: pos=0 and neg=0.")
+        if mode not in ['single', 'cross', 'parallel']:
+            raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
+
+        self.mask_key = mask_key
+        self.mode = mode
+        self.pos_ratio = pos / (pos + neg)
+        self.spatial_size = spatial_size
+        self.num_samples = num_samples
+        self.axis = axis
+
+    def randomize(
+        self,
+        mask: np.ndarray,
+        fg_indices: Optional[np.ndarray] = None,
+        bg_indices: Optional[np.ndarray] = None,
+        image: Optional[np.ndarray] = None,
+    ) -> None:
+        self.spatial_size = fall_back_tuple(self.spatial_size, default=mask.shape[1:])
+        if fg_indices is None or bg_indices is None:
+            fg_indices_, bg_indices_ = map_binary_to_indices(mask, image, self.image_threshold)
+        else:
+            fg_indices_ = fg_indices
+            bg_indices_ = bg_indices
+        self.centers = generate_pos_neg_label_crop_centers(
+            self.spatial_size, self.num_samples, self.pos_ratio, mask.shape[1:], fg_indices_, bg_indices_, self.R
+        )
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+
+        fg_indices, bg_indices = map_binary_to_indices(d[self.mask_key], None, 0)
+        self.randomize(d[self.mask_key], fg_indices, bg_indices)
+
+        results: List[np.ndarray] = list()
+        if self.centers is not None:
+            for center in self.centers:
+                cropper = SpatialCrop(roi_center=tuple(center), roi_size=self.spatial_size)
+                results.append(cropper(img))
+
+        return results
 
 
 
