@@ -4,7 +4,8 @@ defined in :py:class:`monai.transforms.intensity.array`.
 
 Class names are ended with 'd' to denote dictionary-based transforms.
 """
-from typing import Dict, Hashable, Mapping
+import torch
+from typing import Dict, Hashable, Mapping, Optional
 
 import numpy as np
 
@@ -157,10 +158,14 @@ class RandNonlineard(MapTransform, Randomizable):
 
 
 class Clahed(MapTransform):
-    """Dictionary-based wrapper of :py:class:`monai_ex.transforms.Clahe`.
-    """
+    """Dictionary-based wrapper of :py:class:`monai_ex.transforms.Clahe`."""
+
     def __init__(
-        self, keys: KeysCollection, kernel_size=None, clip_limit=0.01, nbins=256
+        self,
+        keys: KeysCollection,
+        kernel_size: Optional[int] = None,
+        clip_limit: float = 0.01,
+        nbins: int = 256,
     ) -> None:
         super().__init__(keys)
         self.converter = Clahe()
