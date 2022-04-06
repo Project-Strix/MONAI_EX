@@ -423,3 +423,26 @@ class Clahe(Transform):
             return np.expand_dims(filter_img, axis=channel_dim)
         else:
             return filter_img
+
+
+class ClipNorm(Transform):
+    """
+    clip image with min_percentile and max_percentile
+    MinMax Normalization
+    """
+    def __init__(
+        self,
+        min_perc: float,
+        max_perc: float,
+    ) -> None:
+        super().__init__()
+        self.min_perc = min_perc
+        self.max_perc = max_perc
+    
+    def __call__(self, data: np.ndarray):
+        data = np.clip(data, np.percentile(data, self.min_perc), np.percentile(data, self.max_perc))
+        data = (data - np.min(data))/(np.max(data) - np.min(data))
+
+        return data
+
+

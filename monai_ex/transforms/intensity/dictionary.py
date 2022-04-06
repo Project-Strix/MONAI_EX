@@ -12,7 +12,7 @@ import numpy as np
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
-from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe
+from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe, ClipNorm
 
 
 class ScaleIntensityByDicomInfod(MapTransform):
@@ -182,6 +182,23 @@ class Clahed(MapTransform):
         return d
 
 
+class ClipNormd(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        min_perc: float,
+        max_perc: float,
+    ):
+        super(ClipNormd, self).__init__(keys)
+        self.converter = ClipNorm(min_perc, max_perc)
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for _, key in enumerate(self.keys):
+            d[key] = self.converter(d[key])
+
+        return d
+
 ScaleIntensityByDicomInfoD = ScaleIntensityByDicomInfoDict = ScaleIntensityByDicomInfod
 MaskIntensityExD = MaskIntensityExDict = MaskIntensityExd
 RandLocalPixelShuffleD = RandLocalPixelShuffleDict = RandLocalPixelShuffled
@@ -191,3 +208,4 @@ RandNonlinearD = RandNonlinearDict = RandNonlineard
 ClipIntensityD = ClipIntensityDict = ClipIntensityd
 MedianFilterD = MedianFilterDict = MedianFilterd
 ClaheD = ClaheDict = Clahed
+ClipNormD = ClipNormDict = ClipNormd
