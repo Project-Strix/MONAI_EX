@@ -56,7 +56,10 @@ class CSVSaverEx(CSVSaver):
         count = 0
         while save_key in self._cache_dict:
             count += 1
-            save_key += f"_{count}"
+            if count == 1:
+                save_key += f"_{count}"
+            elif count > 1:
+                save_key = save_key.replace(f"_{count-1}", f"_{count}")
 
         self._cache_dict[save_key] = data.astype(np.float32)
 
@@ -77,12 +80,12 @@ class CSVSaverEx(CSVSaver):
         if labels:
             for i, (data, label) in enumerate(zip(batch_data, labels)):
                 if torch.is_tensor(data):
-                    data = data.detach().cpu().numpy()
+                    data = data.detach().cpu().numpy().squeeze()
                 if torch.is_tensor(label):
                     label = label.detach().cpu().numpy()
-                # print('Type:', type(data), type(label), type((data, label)))
+
                 self.save(
-                    np.array((data, label), dtype=object),
+                    np.concatenate([data, label], dtype=np.float32),
                     {k: meta_data[k][i] for k in meta_data} if meta_data else None,
                 )
         else:
@@ -95,7 +98,7 @@ class CSVSaverEx(CSVSaver):
 class ClassificationSaverEx(ClassificationSaver):
     """
     Extension of MONAI's ClassificationSaver.
-    Extended: save_labels.
+    Extended: `save_labels` save ground-truth data.
     """
 
     def __init__(
