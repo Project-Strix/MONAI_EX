@@ -10,8 +10,11 @@ from monai.engines.trainer import Trainer, SupervisedTrainer
 from monai.engines.utils import IterationEvents, default_metric_cmp_fn
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import apply_transform
-from monai_ex.engines.utils import default_prepare_batch_ex
-from monai_ex.engines.utils import CustomKeys as Keys
+from monai_ex.engines.utils import (
+    default_prepare_batch_ex,
+    default_metric_cmp_fn,
+    CustomKeys as Keys
+)
 from monai_ex.inferers import Inferer, UnifiedInferer
 from monai.transforms import Transform
 from monai.utils import exact_version, optional_import
@@ -275,13 +278,16 @@ class MultiTaskTrainer(Trainer):
         prepare_batch: Callable = default_prepare_batch_ex,
         iteration_update: Optional[Callable] = None,
         inferer: Optional[Inferer] = None,
-        post_transform: Optional[Transform] = None,
+        postprocessing: Optional[Transform] = None,
         key_train_metric: Optional[Dict[str, Metric]] = None,
         additional_metrics: Optional[Dict[str, Metric]] = None,
+        metric_cmp_fn: Callable = default_metric_cmp_fn,
         train_handlers: Optional[Sequence] = None,
         amp: bool = False,
         event_names: Optional[List[Union[str, EventEnum]]] = None,
         event_to_attr: Optional[dict] = None,
+        decollate: bool = True,
+        optim_set_to_none: bool = False,
         custom_keys: Optional[dict] = None,
     ) -> None:
         super().__init__(
@@ -292,14 +298,15 @@ class MultiTaskTrainer(Trainer):
             non_blocking=non_blocking,
             prepare_batch=prepare_batch,
             iteration_update=iteration_update,
-            post_transform=post_transform,
+            postprocessing=postprocessing,
             key_metric=key_train_metric,
             additional_metrics=additional_metrics,
+            metric_cmp_fn=metric_cmp_fn,
             handlers=train_handlers,
             amp=amp,
-            # add the iteration events
-            event_names=[IterationEvents] if event_names is None else event_names + [IterationEvents],
+            event_names=event_names,
             event_to_attr=event_to_attr,
+            decollate=decollate,
         )
         if custom_keys is None:
             self.keys = {
@@ -330,7 +337,7 @@ class MultiTaskTrainer(Trainer):
             engine.fire_event(IterationEvents.FORWARD_COMPLETED)
             if not isinstance(preds, tuple):
                 raise ValueError(
-                    "Pred must be tuple in multi-task framework",
+                    "Predictions must be tuple in multi-task framework",
                     f"but got {type(engine.state.output[self.keys['PRED']])}"
                 )
             if not isinstance(targets, tuple):
@@ -340,7 +347,7 @@ class MultiTaskTrainer(Trainer):
                 )
             if len(preds) != len(targets):
                 raise ValueError(
-                    "Pred len must equal to targets len",
+                    "Predictions len must equal to targets len",
                     f"but got {len(preds)} != {len(targets)}"
                 )
 
@@ -352,16 +359,21 @@ class MultiTaskTrainer(Trainer):
 
             total_loss = []
             for pred, target, loss_fn in zip(preds, targets, self.loss_functions):
-                if pred.dim > targets.dim and 1 in pred.shape:
+                if pred.dim > target.dim and 1 in pred.shape:
                     pred.squeeze_()
                 loss = loss_fn(pred, target).mean()
                 total_loss.append(loss)
 
             engine.state.output[self.keys["LOSS"]] = torch.mean(total_loss)
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
-        
+
         self.network.train()
-        self.optimizer.zero_grad()
+        # `set_to_none` only work from PyTorch 1.7.0
+        if not pytorch_after(1, 7):
+            self.optimizer.zero_grad()
+        else:
+            self.optimizer.zero_grad(set_to_none=self.optim_set_to_none)
+
         if self.amp and self.scaler is not None:
             with torch.cuda.amp.autocast():
                 _compute_pred_loss()
