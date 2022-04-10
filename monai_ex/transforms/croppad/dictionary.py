@@ -21,7 +21,6 @@ from monai_ex.transforms.croppad.array import (
     CenterMask2DSliceCrop,
     FullMask2DSliceCrop,
     GetMaxSlices3direcCrop,
-    KSpaceResample,
 )
 
 
@@ -333,31 +332,8 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         return results
 
 
-class KSpaceResampled(MapTransform):
-    def __init__(
-        self,
-        keys: KeysCollection,
-        roi_size: Union[Sequence[int], int],
-        as_tensor_output: bool = False,
-        device: Optional[torch.device] = None,
-    ) -> None:
-        super().__init__(keys)
-        self.resizer = KSpaceResample(
-            roi_size=roi_size,
-            as_tensor_output=as_tensor_output,
-            device=device,
-        )
-
-    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
-        d = dict(data)
-        for key in self.keys:
-            d[key] = self.resizer(d[key])
-        return d
-
-
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
 GetMaxSlices3direcCropD = GetMaxSlices3direcCropDict = GetMaxSlices3direcCropd
 RandCropByPosNegLabelExD = RandCropByPosNegLabelExDict = RandCropByPosNegLabelExd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
-KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
