@@ -1,6 +1,7 @@
 from monai.data import *
 from .dataset import SplitDataset
 from .nifti_saver import NiftiSaverEx
+from .data_summary import DatasetSummaryEx
 from .register import DATASETYPE
 
 DATASETYPE.register("Dataset", Dataset)
