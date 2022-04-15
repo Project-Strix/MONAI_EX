@@ -12,7 +12,7 @@ import numpy as np
 from monai.config import KeysCollection
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
-from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe, ClipNorm
+from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe, ClipNorm, ToGrayscale
 
 
 class ScaleIntensityByDicomInfod(MapTransform):
@@ -44,9 +44,7 @@ class ScaleIntensityByDicomInfod(MapTransform):
         self.b_max = b_max
         self.clip = clip
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for key in self.keys:
             assert (
@@ -82,16 +80,12 @@ class MaskIntensityExd(MapTransform):
 
     """
 
-    def __init__(
-        self, keys: KeysCollection, mask_key: KeysCollection, fill_mode="zero"
-    ) -> None:
+    def __init__(self, keys: KeysCollection, mask_key: KeysCollection, fill_mode="zero") -> None:
         super().__init__(keys)
         self.mask_key = mask_key
         self.converter = MaskIntensity(mask_data=np.array([]))
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         mask_data = d[self.mask_key]
         for key in self.keys:
@@ -128,9 +122,7 @@ class MedianFilterd(MapTransform):
         super(MedianFilterd, self).__init__(keys)
         self.converter = MedianFilter(size, mode=mode, cval=cval, origin=origin)
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for _, key in enumerate(self.keys):
             d[key] = self.converter(d[key])
@@ -173,9 +165,7 @@ class Clahed(MapTransform):
         self.clip_limit = clip_limit
         self.nbins = nbins
 
-    def __call__(
-        self, img: Mapping[Hashable, torch.Tensor]
-    ) -> Dict[Hashable, torch.Tensor]:
+    def __call__(self, img: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
         d = dict(img)
         for idx, key in enumerate(self.keys):
             d[key] = self.converter(d[key])
@@ -199,6 +189,24 @@ class ClipNormd(MapTransform):
 
         return d
 
+
+class ToGrayscaled(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        inverse: bool = False,
+    ):
+        super(ToGrayscaled, self).__init__(keys)
+        self.converter = ToGrayscale(inverse)
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for key in self.keys:
+            d[key] = self.converter(d[key])
+
+        return d
+
+
 ScaleIntensityByDicomInfoD = ScaleIntensityByDicomInfoDict = ScaleIntensityByDicomInfod
 MaskIntensityExD = MaskIntensityExDict = MaskIntensityExd
 RandLocalPixelShuffleD = RandLocalPixelShuffleDict = RandLocalPixelShuffled
@@ -209,3 +217,4 @@ ClipIntensityD = ClipIntensityDict = ClipIntensityd
 MedianFilterD = MedianFilterDict = MedianFilterd
 ClaheD = ClaheDict = Clahed
 ClipNormD = ClipNormDict = ClipNormd
+ToGrayscaleD = ToGrayscaleDict = ToGrayscaled

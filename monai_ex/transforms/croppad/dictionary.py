@@ -1,5 +1,4 @@
 from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List
-from copy import deepcopy
 
 import torch
 import numpy as np
@@ -10,7 +9,11 @@ from monai.transforms.utils import (
     map_binary_to_indices,
     generate_pos_neg_label_crop_centers,
 )
-from monai.transforms import RandCropByPosNegLabeld, SpatialCrop, ResizeWithPadOrCrop
+from monai.transforms import (
+    RandCropByPosNegLabeld,
+    SpatialCrop,
+    ResizeWithPadOrCrop,
+)
 from monai.utils import fall_back_tuple
 
 from monai_ex.utils import ImageMetaKey as Key
@@ -54,9 +57,7 @@ class CenterMask2DSliceCropd(MapTransform):
             for n_slice in n_slices
         ]
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for i, key in enumerate(self.keys):
             d[key] = self.cropper[i](d[key], d[self.mask_key])
@@ -83,9 +84,7 @@ class FullMask2DSliceCropd(MapTransform):
             n_slices=n_slices,
         )
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         mask = d[self.mask_key]
         centers = self.cropper.get_center_pos_(mask)
@@ -122,9 +121,7 @@ class GetMaxSlices3direcCropd(MapTransform):
             n_slices=n_slices,
         )
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for key in self.keys:
             d[key] = self.cropper(d[key], d[self.mask_key])
@@ -139,17 +136,12 @@ class FullImage2DSliceCropd(MapTransform):
         roi_size: Union[Sequence[int], int],
         crop_mode: str,
         z_axis: int,
-        n_slices: int = 3
+        n_slices: int = 3,
     ) -> None:
         super().__init__(keys)
         self.mask_key = mask_key
-        self.cropper = FullImage2DSliceCrop(
-            roi_size=roi_size,
-            crop_mode=crop_mode,
-            z_axis=z_axis,
-            n_slices=n_slices
-        )
-    
+        self.cropper = FullImage2DSliceCrop(roi_size=roi_size, crop_mode=crop_mode, z_axis=z_axis, n_slices=n_slices)
+
     def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         mask = d[self.mask_key]
@@ -163,8 +155,9 @@ class FullImage2DSliceCropd(MapTransform):
             else:
                 for i in range(len(centers)):
                     results[i][key] = data[key]
-        
+
         return results
+
 
 class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
     """Dictionary-based version :py:class:`monai_ex.transforms.RandCropByPosNegLabelEx`."""
@@ -241,11 +234,8 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
                 center_ori[i] = center_i
             return center_ori
 
-
         if fg_indices is None or bg_indices is None:
-            fg_indices_, bg_indices_ = map_binary_to_indices(
-                label, image, self.image_threshold
-            )
+            fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
         else:
             fg_indices_ = fg_indices
             bg_indices_ = bg_indices
@@ -261,50 +251,34 @@ class RandCropByPosNegLabelExd(RandCropByPosNegLabeld):
         self.offset_centers = []
         for center in self.centers:
             if 0 < self.offset <= 1:
-                offset = [
-                    self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1])
-                    for sz in self.spatial_size
-                ]
+                offset = [self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1]) for sz in self.spatial_size]
             elif self.offset > 1:
-                offset = [
-                    self.R.randint(self.offset) * self.R.choice([1, -1])
-                    for sz in self.spatial_size
-                ]
+                offset = [self.R.randint(self.offset) * self.R.choice([1, -1]) for sz in self.spatial_size]
             else:
                 offset = [
                     0,
                 ] * len(self.spatial_size)
             # print('Offset: ', offset, "Center: ", center)
-            offset_centers = [int(c+b) for c, b in zip(center, offset)]
+            offset_centers = [int(c + b) for c, b in zip(center, offset)]
             self.offset_centers.append(_correct_centers(offset_centers, valid_start, valid_end))
         self.centers = self.offset_centers
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> List[Dict[Hashable, np.ndarray]]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> List[Dict[Hashable, np.ndarray]]:
         d = dict(data)
         label = d[self.label_key]
         image = d[self.image_key] if self.image_key else None
-        fg_indices = (
-            d.get(self.fg_indices_key) if self.fg_indices_key is not None else None
-        )
-        bg_indices = (
-            d.get(self.bg_indices_key) if self.bg_indices_key is not None else None
-        )
+        fg_indices = d.get(self.fg_indices_key) if self.fg_indices_key is not None else None
+        bg_indices = d.get(self.bg_indices_key) if self.bg_indices_key is not None else None
 
         if self.target_label is not None:
             label = (label == self.target_label).astype(np.uint8)
 
         self.randomize(label, fg_indices, bg_indices, image)
         if not isinstance(self.spatial_size, tuple):
-            raise TypeError(
-                f"Expect spatial_size to be tuple, but got {type(self.spatial_size)}"
-            )
+            raise TypeError(f"Expect spatial_size to be tuple, but got {type(self.spatial_size)}")
         if self.centers is None:
             raise AssertionError
-        results: List[Dict[Hashable, np.ndarray]] = [
-            {} for _ in range(self.num_samples)
-        ]
+        results: List[Dict[Hashable, np.ndarray]] = [{} for _ in range(self.num_samples)]
 
         for i, center in enumerate(self.centers):
             for key in self.key_iterator(d):
@@ -354,9 +328,7 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         self.bg_indices_key = bg_indices_key
 
         if pos < 0 or neg < 0:
-            raise ValueError(
-                f"pos and neg must be nonnegative, got pos={pos} neg={neg}."
-            )
+            raise ValueError(f"pos and neg must be nonnegative, got pos={pos} neg={neg}.")
         if pos + neg == 0:
             raise ValueError("Incompatible values: pos=0 and neg=0.")
         self.pos_ratio = pos / (pos + neg)
@@ -386,9 +358,7 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         image: Optional[np.ndarray] = None,
     ) -> None:
         if fg_indices is None or bg_indices is None:
-            fg_indices_, bg_indices_ = map_binary_to_indices(
-                label, image, self.image_threshold
-            )
+            fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
         else:
             fg_indices_ = fg_indices
             bg_indices_ = bg_indices
@@ -403,46 +373,30 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
             self.R,
         )
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> List[Dict[Hashable, np.ndarray]]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> List[Dict[Hashable, np.ndarray]]:
         d = dict(data)
         label = d[self.label_key]
         image = d[self.image_key] if self.image_key else None
-        fg_indices = (
-            d.get(self.fg_indices_key, None)
-            if self.fg_indices_key is not None
-            else None
-        )
-        bg_indices = (
-            d.get(self.bg_indices_key, None)
-            if self.bg_indices_key is not None
-            else None
-        )
+        fg_indices = d.get(self.fg_indices_key, None) if self.fg_indices_key is not None else None
+        bg_indices = d.get(self.bg_indices_key, None) if self.bg_indices_key is not None else None
 
         self.randomize(label, fg_indices, bg_indices, image)
         assert isinstance(self.spatial_size, tuple)
         assert self.centers is not None
-        results: List[Dict[Hashable, np.ndarray]] = [
-            dict() for _ in range(self.num_samples)
-        ]
+        results: List[Dict[Hashable, np.ndarray]] = [dict() for _ in range(self.num_samples)]
         for key in data.keys():
             if key in self.keys:
                 img = d[key]
                 for i, center in enumerate(self.centers):
                     if self.crop_mode in ["single", "parallel"]:
                         size_ = self.get_new_spatial_size()
-                        slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(
-                            img
-                        )
+                        slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(img)
                         results[i][key] = np.moveaxis(slice_.squeeze(0), self.z_axis, 0)
                     else:
                         cross_slices = np.zeros(shape=(3,) + self.spatial_size)
                         for k in range(3):
                             size_ = np.insert(self.spatial_size, k, 1)
-                            slice_ = SpatialCrop(
-                                roi_center=tuple(center), roi_size=size_
-                            )(img)
+                            slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(img)
                             cross_slices[k] = slice_.squeeze()
                         results[i][key] = cross_slices
             else:
@@ -484,9 +438,7 @@ class KSpaceResampled(MapTransform):
             tolerance=tolerance,
         )
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> Dict[Hashable, np.ndarray]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         for key, metakey_postfix in zip(self.keys, self.meta_key_postfix):
             meta_key = f"{key}_{metakey_postfix}"
@@ -516,7 +468,12 @@ class RandCenterSpatialCropd(Randomizable, MapTransform):
     """
 
     def __init__(
-        self, keys: KeysCollection, image_key: Optional[str] = None, roi_size: Union[Sequence[int], int]= None, offset: float = 0.0, allow_missing_keys: bool = False
+        self,
+        keys: KeysCollection,
+        image_key: Optional[str] = None,
+        roi_size: Union[Sequence[int], int] = None,
+        offset: float = 0.0,
+        allow_missing_keys: bool = False,
     ) -> None:
         super().__init__(keys, allow_missing_keys)
         self.offset = offset
@@ -525,8 +482,8 @@ class RandCenterSpatialCropd(Randomizable, MapTransform):
         self.centers = None
 
     def correct_centers(
-            self, center_ori: List[np.ndarray], valid_start: np.ndarray, valid_end: np.ndarray
-        ) -> List[np.ndarray]:
+        self, center_ori: List[np.ndarray], valid_start: np.ndarray, valid_end: np.ndarray
+    ) -> List[np.ndarray]:
         for i, c in enumerate(center_ori):
             center_i = c
             if c < valid_start[i]:
@@ -546,22 +503,18 @@ class RandCenterSpatialCropd(Randomizable, MapTransform):
         for i in range(len(valid_start)):  # need this because np.random.randint does not work with same start and end
             if valid_start[i] == valid_end[i]:
                 valid_end[i] += 1
-        
+
         self.roi_size = fall_back_tuple(self.roi_size, img.shape[1:])
         center = [i // 2 for i in img.shape[1:]]
-        
+
         if 0 < self.offset <= 1:
-            offset = [
-                self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1])
-                for sz in self.roi_size
-            ]
+            offset = [self.R.randint(self.offset * sz // 2) * self.R.choice([1, -1]) for sz in self.roi_size]
         elif self.offset > 1:
-            offset = [
-                self.R.randint(self.offset) * self.R.choice([1, -1])
-                for sz in self.roi_size
-            ]
+            offset = [self.R.randint(self.offset) * self.R.choice([1, -1]) for sz in self.roi_size]
         else:
-            offset = [0,] * len(self.roi_size)
+            offset = [
+                0,
+            ] * len(self.roi_size)
         offset_centers = [int(c + b) for c, b in zip(center, offset)]
         self.center = self.correct_centers(offset_centers, valid_start, valid_end)
 
@@ -576,22 +529,14 @@ class RandCenterSpatialCropd(Randomizable, MapTransform):
 
 class RandCropSliceD(Randomizable, MapTransform):
     def __init__(
-        self,
-        keys,
-        mask_key,
-        mode,
-        pos: float = 1.0,
-        neg: float = 1.0,
-        spatial_size=None,
-        num_samples=1,
-        axis=0
+        self, keys, mask_key, mode, pos: float = 1.0, neg: float = 1.0, spatial_size=None, num_samples=1, axis=0
     ):
         super().__init__(keys)
         if pos < 0 or neg < 0:
             raise ValueError(f"pos and neg must be nonnegative, got pos={pos} neg={neg}.")
         if pos + neg == 0:
             raise ValueError("Incompatible values: pos=0 and neg=0.")
-        if mode not in ['single', 'cross', 'parallel']:
+        if mode not in ["single", "cross", "parallel"]:
             raise ValueError("Cropping mode must be one of 'single, cross, parallel'")
 
         self.mask_key = mask_key
@@ -631,8 +576,6 @@ class RandCropSliceD(Randomizable, MapTransform):
                 results.append(cropper(img))
 
         return results
-
-
 
 
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
