@@ -301,7 +301,82 @@ class MultiTaskTrainer(Trainer):
             event_names=[IterationEvents] if event_names is None else event_names + [IterationEvents],
             event_to_attr=event_to_attr,
         )
+        if custom_keys is None:
+            self.keys = {
+                "IMAGE": Keys.IMAGE,
+                "LABEL": Keys.LABEL,
+                "PRED": Keys.PRED,
+                "LOSS": Keys.LOSS
+            }
+        else:
+            self.keys = custom_keys
 
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
+        if batchdata is None:
+            raise ValueError("Must provide batch data for current iteration.")
+        batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
+        if len(batch) == 2:
+            inputs, targets = batch
+            args: Tuple = ()
+            kwargs: Dict = {}
+        else:
+            inputs, targets, args, kwargs = batch
+        # put iteration outputs into engine.state
+        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
+
+        def _compute_pred_loss():
+            preds = self.inferer(inputs, self.network, *args, **kwargs)
+            engine.state.output[self.keys["PRED"]] = preds
+            engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+            if not isinstance(preds, tuple):
+                raise ValueError(
+                    "Pred must be tuple in multi-task framework",
+                    f"but got {type(engine.state.output[self.keys['PRED']])}"
+                )
+            if not isinstance(targets, tuple):
+                raise ValueError(
+                    "Targets must be tuple in multi-task framework",
+                    f"but got {type(targets)}"
+                )
+            if len(preds) != len(targets):
+                raise ValueError(
+                    "Pred len must equal to targets len",
+                    f"but got {len(preds)} != {len(targets)}"
+                )
+
+            if len(preds) != len(self.loss_functions):
+                raise ValueError(
+                    "Pred len must equal to loss functions len",
+                    f"but got {len(preds)} != {len(self.loss_functions)}"
+                )
+
+            total_loss = []
+            for pred, target, loss_fn in zip(preds, targets, self.loss_functions):
+                if pred.dim > targets.dim and 1 in pred.shape:
+                    pred.squeeze_()
+                loss = loss_fn(pred, target).mean()
+                total_loss.append(loss)
+
+            engine.state.output[self.keys["LOSS"]] = torch.mean(total_loss)
+            engine.fire_event(IterationEvents.LOSS_COMPLETED)
+        
+        self.network.train()
+        self.optimizer.zero_grad()
+        if self.amp and self.scaler is not None:
+            with torch.cuda.amp.autocast():
+                _compute_pred_loss()
+            self.scaler.scale(engine.state.output[self.keys["LOSS"]]).backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            _compute_pred_loss()
+            engine.state.output[self.keys["LOSS"]].backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.optimizer.step()
+        engine.fire_event(IterationEvents.MODEL_COMPLETED)
+
+        return engine.state.output
 
 
 class RcnnTrainer(Trainer):
