@@ -6,8 +6,8 @@ def ensure_list(vals: Any):
     """
     Returns a list of `vals`.
     """
-    if not issequenceiterable(vals):
-        vals = [vals,]
+    if not issequenceiterable(vals) or isinstance(vals, dict):
+        vals = [vals, ]
 
     return list(vals)
 

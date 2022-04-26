@@ -423,6 +423,27 @@ class RandLabelToMaskd(Randomizable, MapTransform):
         return d
 
 
+class GetItemd(MapTransform):
+    """Designed to get i-th item of given tuple.
+    Eg. the output of network is a tuple.
+
+    Args:
+        keys (KeysCollection): keys of the corresponding items to be transformed.
+        index (Union[Sequence[int], int]): i-th item you want to select.
+    """
+    def __init__(  # pytype: disable=annotation-type-mismatch
+        self,
+        keys: KeysCollection,
+        index: Union[Sequence[int], int],
+    ):
+        super().__init__(keys)
+        self.index = ensure_tuple_rep(index, len(self.keys))
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        for key, index in self.key_iterator(d, self.index):
+            d[key] = d[key][index]
+        return d
 
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
@@ -432,3 +453,4 @@ DataLabellinD = DataLabellingDict = DataLabellingd
 ConcatModalityD = ConcatModalityDict = ConcatModalityd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 RandLabelToMaskD = RandLabelToMaskDict = RandLabelToMaskd
+GetItemD = GetItemDict = GetItemd

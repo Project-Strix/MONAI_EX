@@ -48,6 +48,22 @@ class RandomSelect(Randomizable):
 
 
 class ComposeEx(Compose):
+    """Extension of MONAI's Compose transform.
+    Extented: `first`
+
+    Args:
+        transforms (Optional[Union[Sequence[Callable], Callable]], optional): transforms. Defaults to None.
+        map_items (bool, optional): If some transform takes a data item dictionary as input, and returns a
+            sequence of data items in the transform chain, all following transforms
+            will be applied to each item of this list if `map_items` is `True`.
+            If `map_items` is `False`, the returned sequence is passed whole
+            to the next callable in the chain. Defaults to True.
+        unpack_items (bool, optional): _description_. Defaults to False.
+        first (bool, optional): whether only extract specified keys from the first item 
+            if input data is a list of dictionaries, it's used to extract the scalar data
+            which doesn't have batch dim and was replicated into every dictionary 
+            when decollating, like `loss`, etc.. Defaults to False.
+    """
     def __init__(
         self,
         transforms: Optional[Union[Sequence[Callable], Callable]] = None,

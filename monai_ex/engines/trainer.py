@@ -6,32 +6,29 @@ import torch
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
+from monai.config import IgniteInfo
 from monai.engines.trainer import Trainer, SupervisedTrainer
 from monai.engines.utils import IterationEvents, default_metric_cmp_fn
-from monai.inferers import Inferer, SimpleInferer
+from monai.inferers import Inferer
 from monai.transforms import apply_transform
-from monai_ex.engines.utils import (
-    default_prepare_batch_ex,
-    default_metric_cmp_fn,
-    CustomKeys as Keys
-)
-from monai_ex.inferers import Inferer, UnifiedInferer
+from monai_ex.engines.utils import default_prepare_batch_ex, CustomKeys as Keys
+from monai_ex.inferers import Inferer
 from monai.transforms import Transform
-from monai.utils import exact_version, optional_import
+from monai.utils import min_version, optional_import, pytorch_after
 
 if TYPE_CHECKING:
     from ignite.engine import Engine, Events, EventEnum
     from ignite.metrics import Metric
 else:
-    Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
-    Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
-    Metric, _ = optional_import("ignite.metrics", "0.4.7", exact_version, "Metric")
-    EventEnum, _ = optional_import("ignite.engine", "0.4.7", exact_version, "EventEnum")
+    Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
+    Engine, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Engine")
+    Metric, _ = optional_import("ignite.metrics", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Metric")
+    EventEnum, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "EventEnum")
 
 
 class SiameseTrainer(SupervisedTrainer):
     """SiameseTrainer
-    
+
     Supervised Trainer designed for SiameseNet.
     Input batchdata should contains two elements.
     """
@@ -74,6 +71,7 @@ class SiameseTrainer(SupervisedTrainer):
             amp=amp,
         )
         if post_transform is not None:
+
             @self.on(Events.ITERATION_COMPLETED)
             def run_post_transform(engine: Engine) -> None:
                 assert post_transform is not None
@@ -126,13 +124,14 @@ class SiameseTrainer(SupervisedTrainer):
                 output1 = self.inferer(inputs1, self.network, *args, **kwargs)
                 output2 = self.inferer(inputs2, self.network, *args, **kwargs)
 
-                if isinstance(output1, tuple) and len(output1)==2:  # 2 outputs
+                if isinstance(output1, tuple) and len(output1) == 2:  # 2 outputs
                     loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2)
                 elif isinstance(output1, torch.Tensor):
                     loss = self.loss_function(output1, output2, targets1, targets2)
                 else:
-                    raise NotImplementedError(f'SiameseNet expected 1or2 outputs,'
-                                              f'but got {type(output1)} with size of {len(output1)}')
+                    raise NotImplementedError(
+                        f"SiameseNet expected 1or2 outputs," f"but got {type(output1)} with size of {len(output1)}"
+                    )
 
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -145,25 +144,25 @@ class SiameseTrainer(SupervisedTrainer):
             elif len(output2) == 2:
                 loss = self.loss_function(output1[0], output2[0], output1[1], output2[1], targets1, targets2)
             else:
-                raise NotImplementedError(f'SiameseNet expected 1or2 outputs, but got {len(output1)}')
+                raise NotImplementedError(f"SiameseNet expected 1or2 outputs, but got {len(output1)}")
 
             loss.backward()
             self.optimizer.step()
 
-        if isinstance(output1, tuple) and len(output1)==2:
+        if isinstance(output1, tuple) and len(output1) == 2:
             return {
-                Keys.IMAGE: torch.cat((inputs1,inputs2), dim=0),
+                Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
                 Keys.LABEL: torch.cat((targets1, targets2), dim=0),
                 Keys.LATENT: torch.cat((output1[0], output2[0]), dim=0),
                 Keys.PRED: torch.cat((output1[1], output2[1]), dim=0),
-                Keys.LOSS: loss.item()
+                Keys.LOSS: loss.item(),
             }
         else:
             return {
                 Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
                 Keys.LABEL: torch.cat((targets1, targets2), dim=0),
                 Keys.LATENT: torch.cat((output1, output2), dim=0),
-                Keys.LOSS: loss.item()
+                Keys.LOSS: loss.item(),
             }
 
 
@@ -172,6 +171,7 @@ class SupervisedTrainerEx(SupervisedTrainer):
     Extended: custom_keys.
 
     """
+
     def __init__(
         self,
         device: torch.device,
@@ -239,10 +239,14 @@ class SupervisedTrainerEx(SupervisedTrainer):
         def _compute_pred_loss():
             engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
             engine.fire_event(IterationEvents.FORWARD_COMPLETED)
-            if engine.state.output[self.keys["PRED"]].shape != targets.shape and \
-               1 in engine.state.output[self.keys["PRED"]].shape:
+            if (
+                engine.state.output[self.keys["PRED"]].shape != targets.shape
+                and 1 in engine.state.output[self.keys["PRED"]].shape
+            ):
                 engine.state.output[self.keys["PRED"]].squeeze_()
-            engine.state.output[self.keys["LOSS"]] = self.loss_function(engine.state.output[self.keys["PRED"]], targets).mean()
+            engine.state.output[self.keys["LOSS"]] = self.loss_function(
+                engine.state.output[self.keys["PRED"]], targets
+            ).mean()
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
 
         self.network.train()
@@ -272,7 +276,7 @@ class MultiTaskTrainer(Trainer):
         train_data_loader: Union[Iterable, DataLoader],
         network: torch.nn.Module,
         optimizer: Optimizer,
-        loss_functions: List[Callable],
+        loss_function: List[Callable],
         epoch_length: Optional[int] = None,
         non_blocking: bool = False,
         prepare_batch: Callable = default_prepare_batch_ex,
@@ -308,13 +312,14 @@ class MultiTaskTrainer(Trainer):
             event_to_attr=event_to_attr,
             decollate=decollate,
         )
+        self.network = network
+        self.optimizer = optimizer
+        self.loss_function = loss_function
+        self.inferer = inferer
+        self.optim_set_to_none = optim_set_to_none
+
         if custom_keys is None:
-            self.keys = {
-                "IMAGE": Keys.IMAGE,
-                "LABEL": Keys.LABEL,
-                "PRED": Keys.PRED,
-                "LOSS": Keys.LOSS
-            }
+            self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
         else:
             self.keys = custom_keys
 
@@ -338,33 +343,16 @@ class MultiTaskTrainer(Trainer):
             if not isinstance(preds, tuple):
                 raise ValueError(
                     "Predictions must be tuple in multi-task framework",
-                    f"but got {type(engine.state.output[self.keys['PRED']])}"
+                    f"but got {type(engine.state.output[self.keys['PRED']])}",
                 )
             if not isinstance(targets, tuple):
-                raise ValueError(
-                    "Targets must be tuple in multi-task framework",
-                    f"but got {type(targets)}"
-                )
+                raise ValueError(f"Targets must be tuple in multi-task framework, but got {type(targets)}")
             if len(preds) != len(targets):
-                raise ValueError(
-                    "Predictions len must equal to targets len",
-                    f"but got {len(preds)} != {len(targets)}"
-                )
+                raise ValueError(f"Predictions len must equal to targets, but got {len(preds)} != {len(targets)}")
 
-            if len(preds) != len(self.loss_functions):
-                raise ValueError(
-                    "Pred len must equal to loss functions len",
-                    f"but got {len(preds)} != {len(self.loss_functions)}"
-                )
+            loss = self.loss_function(preds, targets)
 
-            total_loss = []
-            for pred, target, loss_fn in zip(preds, targets, self.loss_functions):
-                if pred.dim > target.dim and 1 in pred.shape:
-                    pred.squeeze_()
-                loss = loss_fn(pred, target).mean()
-                total_loss.append(loss)
-
-            engine.state.output[self.keys["LOSS"]] = torch.mean(total_loss)
+            engine.state.output[self.keys["LOSS"]] = loss
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
 
         self.network.train()
@@ -389,72 +377,3 @@ class MultiTaskTrainer(Trainer):
         engine.fire_event(IterationEvents.MODEL_COMPLETED)
 
         return engine.state.output
-
-
-class RcnnTrainer(Trainer):
-    def __init__(
-        self,
-        device: torch.device,
-        max_epochs: int,
-        train_data_loader: DataLoader,
-        network: torch.nn.Module,
-        optimizer: Optimizer,
-        loss_functions: Sequence[Callable],
-        prepare_batch: Callable = default_prepare_batch_ex,
-        iteration_update: Optional[Callable] = None,
-        inferer: Inferer = UnifiedInferer(),
-        post_transform: Optional[Transform] = None,
-        key_train_metric: Optional[Dict[str, Metric]] = None,
-        additional_metrics: Optional[Dict[str, Metric]] = None,
-        train_handlers: Optional[Sequence] = None,
-        amp: bool = False,
-    ) -> None:
-        super().__init__(
-            device=device,
-            max_epochs=max_epochs,
-            data_loader=train_data_loader,
-            prepare_batch=prepare_batch,
-            iteration_update=iteration_update,
-            post_transform=post_transform,
-            key_metric=key_train_metric,
-            additional_metrics=additional_metrics,
-            handlers=train_handlers,
-            amp=amp,
-        )
-
-        self.network = network
-        self.optimizer = optimizer
-        self.loss_functions = loss_functions
-        self.inferer = inferer
-
-    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
-
-        if batchdata is None:
-            raise ValueError("Must provide batch data for current iteration.")
-
-        images, targets = self.prepare_batch(batchdata)
-
-        images = images.to(engine.state.device)
-        targets = [target.to(engine.state.device) for target in targets]
-
-        self.network.train()
-        self.optimizer.zero_grad()
-        if self.amp and self.scaler is not None:
-            with torch.cuda.amp.autocast():
-                predictions, loss_dict = self.inferer(images, targets, self.network)
-                losses = sum(loss for loss in loss_dict.values())
-            self.scaler.scale(losses).backward()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            predictions, loss_dict = self.inferer(images, targets, self.network)
-            losses = sum(loss for loss in loss_dict.values())
-            losses.backward()
-            self.optimizer.step()
-
-        return {
-            Keys.IMAGE: images,
-            Keys.LABEL: targets,
-            Keys.PRED: predictions,
-            Keys.LOSS: losses.item(),
-        }
