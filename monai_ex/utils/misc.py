@@ -1,5 +1,22 @@
 from typing import Any, List
+
+import torch 
+
 from monai.utils.misc import issequenceiterable
+
+
+def ensure_same_dim(tensor1, tensor2):
+    if not (isinstance(tensor1, torch.Tensor) and isinstance(tensor2, torch.Tensor)):
+        raise TypeError(f"Only accept torch.Tensor type inputs, but got {type(tensor1)} and {type(tensor2)}")
+
+    tensor1_dim, tensor2_dim = tensor1.dim(), tensor2.dim()
+
+    if tensor1_dim > tensor2_dim:
+        return tensor1.squeeze(), tensor2
+    elif tensor1_dim < tensor2_dim:
+        return tensor1, tensor2.squeeze()
+    else:
+        return tensor1, tensor2
 
 
 def ensure_list(vals: Any):

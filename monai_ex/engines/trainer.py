@@ -1,23 +1,21 @@
-import warnings
-from logging import raiseExceptions
-from typing import TYPE_CHECKING, Callable, Tuple, Dict, Optional, Sequence, Union, Iterable, List
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import torch
+from monai.config import IgniteInfo
+from monai.engines.trainer import SupervisedTrainer, Trainer
+from monai.engines.utils import IterationEvents, default_metric_cmp_fn
+from monai.inferers import Inferer
+from monai.transforms import Transform, apply_transform
+from monai.utils import min_version, optional_import, pytorch_after
+from monai_ex.engines.utils import CustomKeys as Keys
+from monai_ex.engines.utils import default_prepare_batch_ex
+from monai_ex.inferers import Inferer
+from monai_ex.utils import ensure_same_dim
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-from monai.config import IgniteInfo
-from monai.engines.trainer import Trainer, SupervisedTrainer
-from monai.engines.utils import IterationEvents, default_metric_cmp_fn
-from monai.inferers import Inferer
-from monai.transforms import apply_transform
-from monai_ex.engines.utils import default_prepare_batch_ex, CustomKeys as Keys
-from monai_ex.inferers import Inferer
-from monai.transforms import Transform
-from monai.utils import min_version, optional_import, pytorch_after
-
 if TYPE_CHECKING:
-    from ignite.engine import Engine, Events, EventEnum
+    from ignite.engine import Engine, EventEnum, Events
     from ignite.metrics import Metric
 else:
     Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
@@ -168,8 +166,10 @@ class SiameseTrainer(SupervisedTrainer):
 
 class SupervisedTrainerEx(SupervisedTrainer):
     """Extension of MONAI's SupervisedTrainer.
-    Extended: custom_keys.
-
+    Extended: 
+      `custom_keys`: Input custom_keys setting.
+      `ensure_dims`: Add simple confirmation for tensor dims of `pred` and `label`
+                     before feeding into loss fn.
     """
 
     def __init__(
@@ -195,6 +195,7 @@ class SupervisedTrainerEx(SupervisedTrainer):
         event_to_attr: Optional[dict] = None,
         decollate: bool = True,
         custom_keys: Optional[dict] = None,
+        ensure_dims: bool = False,
     ) -> None:
         super().__init__(
             device=device,
@@ -222,6 +223,7 @@ class SupervisedTrainerEx(SupervisedTrainer):
             self.keys = {"IMAGE": Keys.IMAGE, "LABEL": Keys.LABEL, "PRED": Keys.PRED, "LOSS": Keys.LOSS}
         else:
             self.keys = custom_keys
+        self.ensure_dims = ensure_dims
 
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
         if batchdata is None:
@@ -239,14 +241,16 @@ class SupervisedTrainerEx(SupervisedTrainer):
         def _compute_pred_loss():
             engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
             engine.fire_event(IterationEvents.FORWARD_COMPLETED)
-            if (
-                engine.state.output[self.keys["PRED"]].shape != targets.shape
-                and 1 in engine.state.output[self.keys["PRED"]].shape
-            ):
-                engine.state.output[self.keys["PRED"]].squeeze_()
-            engine.state.output[self.keys["LOSS"]] = self.loss_function(
-                engine.state.output[self.keys["PRED"]], targets
-            ).mean()
+
+            if self.ensure_dims:
+                engine.state.output[self.keys["LOSS"]] = self.loss_function(
+                    *ensure_same_dim(engine.state.output[self.keys["PRED"]], targets)
+                ).mean()
+            else:
+                engine.state.output[self.keys["LOSS"]] = self.loss_function(
+                    engine.state.output[self.keys["PRED"]], targets
+                ).mean()
+
             engine.fire_event(IterationEvents.LOSS_COMPLETED)
 
         self.network.train()
