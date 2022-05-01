@@ -85,7 +85,7 @@ class CSVSaverEx(CSVSaver):
                     label = label.detach().cpu().numpy()
 
                 self.save(
-                    np.concatenate([data, label], dtype=np.float32),
+                    np.hstack([data, label]).astype(np.float32),
                     {k: meta_data[k][i] for k in meta_data} if meta_data else None,
                 )
         else:
@@ -152,7 +152,7 @@ class ClassificationSaverEx(ClassificationSaver):
         """
         meta_data = self.batch_transform(engine.state.batch)
         if isinstance(meta_data, (list, tuple)):
-            if len(meta_data) == 2:
+            if len(meta_data) == 2:  # if input label
                 if isinstance(meta_data[1], (list, tuple)):
                     self._labels += list(meta_data[1])
                 else:
