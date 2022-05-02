@@ -27,6 +27,8 @@ def from_engine_ex(
 
     def _wrapper(data):
         if isinstance(data, dict):
+            if len(keys) == 1:
+                return transforms[0](data[keys[0]])  # avaid generate one-length tuple (var,) 
             return tuple(t(data[k]) for k, t in zip(keys, transforms))
         if isinstance(data, list) and isinstance(data[0], dict):
             # if data is a list of dictionaries, extract expected keys and construct lists,
