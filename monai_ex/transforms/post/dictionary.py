@@ -7,7 +7,8 @@ import torch
 from monai.config.type_definitions import KeysCollection, NdarrayOrTensor, PathLike
 from monai.data.csv_saver import CSVSaver
 from monai.transforms.inverse import InvertibleTransform
-from monai_ex.transforms.post.array import AsDiscreteEx
+from monai_ex.transforms.post.array import AsDiscreteEx, MultitaskMeanEnsemble
+from monai.transforms.post.dictionary import Ensembled
 from monai.transforms.transform import MapTransform
 from monai.transforms.utility.array import ToTensor
 from monai.transforms.utils import allow_missing_keys_mode, convert_inverse_interp_mode
@@ -100,4 +101,23 @@ class AsDiscreteExd(MapTransform):
         return d
 
 
+class MultitaskMeanEnsembled(Ensembled):
+    """
+    Dictionary-based wrapper of :py:class:`monai_ex.transforms.MultitaskMeanEnsemble`.
+    """
+    backend = MultitaskMeanEnsemble.backend
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        task_num: int,
+        output_key: Optional[str] = None,
+        weights: Optional[Union[Sequence[float], NdarrayOrTensor]] = None
+    ) -> None:
+        ensemble = MultitaskMeanEnsemble(task_num, weights=weights)
+        super().__init__(keys, ensemble, output_key)
+            
+
+
 AsDiscreteExD = AsDiscreteExDict = AsDiscreteExd
+MultitaskMeanEnsembleD = MultitaskMeanEnsembleDict = MultitaskMeanEnsembled

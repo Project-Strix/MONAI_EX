@@ -168,7 +168,7 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
                     tag=self.prefix_name + "/input_1",
                 )
 
-        if self.output_transform(engine.state.output):
+        if self.output_transform(engine.state.output) is not None:
             show_outputs = self.output_transform(engine.state.output)[self.index]
             # ! tmp solution to handle multi-inputs
             if isinstance(show_outputs, (list, tuple)):
