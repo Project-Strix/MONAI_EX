@@ -178,9 +178,10 @@ class ClipNormd(MapTransform):
         keys: KeysCollection,
         min_perc: float,
         max_perc: float,
+        minmax: bool = False,
     ):
         super(ClipNormd, self).__init__(keys)
-        self.converter = ClipNorm(min_perc, max_perc)
+        self.converter = ClipNorm(min_perc, max_perc, minmax)
 
     def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)

@@ -10,6 +10,7 @@ from scipy.special import comb
 from scipy.ndimage import median_filter
 
 from monai.transforms.compose import Randomizable, Transform
+from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensity
 from monai_ex.utils import optional_import
 
 skimage, has_skimage = optional_import("skimage", "0.12")
@@ -379,22 +380,27 @@ class Clahe(Transform):
 
 class ClipNorm(Transform):
     """
-    clip image with min_percentile and max_percentile
-    MinMax Normalization
+    Clip image with specified min_percentile and max_percentile values.
+    Then use MinMax or ZScore Normalization.
     """
 
     def __init__(
         self,
         min_perc: float,
         max_perc: float,
+        minmax: bool = False,
     ) -> None:
         super().__init__()
         self.min_perc = min_perc
         self.max_perc = max_perc
+        if minmax:
+            self.converter = ScaleIntensity(minv=0.0, maxv=1.0)
+        else:
+            self.converter = NormalizeIntensity()
 
     def __call__(self, data: np.ndarray):
         data = np.clip(data, np.percentile(data, self.min_perc), np.percentile(data, self.max_perc))
-        data = (data - np.min(data)) / (np.max(data) - np.min(data))
+        data = self.converter(data)
 
         return data
 
