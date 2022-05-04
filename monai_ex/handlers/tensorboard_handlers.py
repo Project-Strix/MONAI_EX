@@ -94,8 +94,8 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         log_dir: str = "./runs",
         interval: int = 1,
         epoch_level: bool = True,
-        batch_transform: Callable = lambda x: x,
-        output_transform: Callable = lambda x: x,
+        batch_transform: Callable = lambda x: (None, None),
+        output_transform: Callable = lambda x: None,
         global_iter_transform: Callable = lambda x: x,
         index: int = 0,
         max_channels: int = 1,
@@ -124,8 +124,8 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         )
         image_tensor = self.batch_transform(engine.state.batch)[0]
         label_tensor = self.batch_transform(engine.state.batch)[1]
-        
-        if image_tensor:
+
+        if image_tensor is not None:
             show_images = image_tensor[self.index]
             if torch.is_tensor(show_images):
                 show_images = show_images.detach().cpu().numpy()
@@ -146,8 +146,8 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
                     max_frames=self.max_frames,
                     tag=self.prefix_name + "/input_0",
                 )
-        
-        if label_tensor:
+
+        if label_tensor is not None:
             show_labels = label_tensor[self.index]
             if isinstance(show_labels, torch.Tensor):
                 show_labels = show_labels.detach().cpu().numpy()
@@ -168,7 +168,7 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
                     tag=self.prefix_name + "/input_1",
                 )
 
-        if self.output_transform(engine.state.output):
+        if self.output_transform(engine.state.output) is not None:
             show_outputs = self.output_transform(engine.state.output)[self.index]
             # ! tmp solution to handle multi-inputs
             if isinstance(show_outputs, (list, tuple)):

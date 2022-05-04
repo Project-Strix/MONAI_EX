@@ -64,7 +64,6 @@ def compute_CI(y_true, y_pred, statistic: Callable, CI_index=0.95, seed=1):
 def save_roc_curve_fn(
     y_preds, y_targets, save_dir, average_type="macro", CI=True, suffix=""
 ):
-    print("y_targets, y_preds shapes:", y_targets.shape, y_preds.shape)
     y_true, y_pred = y_targets.numpy(), y_preds.numpy()
     fpr, tpr, thresholds = roc_curve(y_true, y_pred)
     auc = roc_auc_score(y_true, y_pred)
