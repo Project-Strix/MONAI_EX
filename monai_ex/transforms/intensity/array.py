@@ -394,7 +394,7 @@ class ClipNorm(Transform):
         self.min_perc = min_perc
         self.max_perc = max_perc
         if minmax:
-            self.converter = ScaleIntensity()
+            self.converter = ScaleIntensity(minv=0.0, maxv=1.0)
         else:
             self.converter = NormalizeIntensity()
 
