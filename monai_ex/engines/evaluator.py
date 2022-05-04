@@ -208,7 +208,7 @@ class SiameseEvaluator(Evaluator):
 
 class SupervisedEvaluatorEx(SupervisedEvaluator):
     """Extension of MONAI's SupervisedEvaluator.
-    Extended: custom_keys: for support medlp custom input keys.
+    Extended: custom_keys: for support strix custom input keys.
               output_latent_code: output registered forward&backward latent code.
               target_latent_layer: target layer name of the latent code.
 
