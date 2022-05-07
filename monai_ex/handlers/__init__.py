@@ -14,3 +14,4 @@ from .cam_handler import GradCamHandler
 from .latent_dumper import LatentCodeSaver
 from .utils import from_engine_ex
 from .image_saver import ImageBatchSaver
+from .stats_handler import StatsHandlerEx

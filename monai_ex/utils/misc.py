@@ -3,6 +3,12 @@ from typing import Any, List
 import torch 
 
 from monai.utils.misc import issequenceiterable
+from functools import partial
+from utils_cw import catch_exception
+from .exceptions import GenericException
+
+
+trycatch = partial(catch_exception, handled_exception_type=GenericException)
 
 
 def ensure_same_dim(tensor1, tensor2):
