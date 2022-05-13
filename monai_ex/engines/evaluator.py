@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 from monai_ex.engines.utils import CustomKeys as Keys
 from monai_ex.engines.utils import default_prepare_batch_ex
-from monai.engines import Evaluator, SupervisedEvaluator
+from monai.engines import Evaluator, SupervisedEvaluator, EnsembleEvaluator
 from monai.engines.utils import IterationEvents, default_metric_cmp_fn
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import Transform
@@ -93,9 +93,7 @@ class SiameseEvaluator(Evaluator):
         self.loss_function = loss_function
         self.inferer = SimpleInferer() if inferer is None else inferer
 
-    def _iteration(
-        self, engine: Engine, batchdata: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
         callback function for the Supervised Evaluation processing logic of 1 iteration in Ignite Engine.
         Return below items in a dictionary:
@@ -117,12 +115,8 @@ class SiameseEvaluator(Evaluator):
         if len(batchdata) != 2:
             raise ValueError(f"len of batchdata should be 2, but got {len(batchdata)}")
 
-        batch1 = self.prepare_batch(
-            batchdata[0], engine.state.device, engine.non_blocking
-        )
-        batch2 = self.prepare_batch(
-            batchdata[1], engine.state.device, engine.non_blocking
-        )
+        batch1 = self.prepare_batch(batchdata[0], engine.state.device, engine.non_blocking)
+        batch2 = self.prepare_batch(batchdata[1], engine.state.device, engine.non_blocking)
 
         if len(batch1) == 2:
             inputs1, targets1 = batch1
@@ -142,9 +136,7 @@ class SiameseEvaluator(Evaluator):
                     output2 = self.inferer(inputs2, self.network, *args, **kwargs)
                     if len(output1) == 1:
                         if self.loss_function:
-                            loss = self.loss_function(
-                                output1, output2, targets1, targets2
-                            ).item()
+                            loss = self.loss_function(output1, output2, targets1, targets2).item()
                         else:
                             loss = 0
                     elif len(output1) == 2:  # Contrastive+CE
@@ -160,17 +152,13 @@ class SiameseEvaluator(Evaluator):
                         else:
                             loss = 0
                     else:
-                        raise NotImplementedError(
-                            f"SiameseNet expected 1or2 outputs, but got {len(output1)}"
-                        )
+                        raise NotImplementedError(f"SiameseNet expected 1or2 outputs, but got {len(output1)}")
             else:
                 output1 = self.inferer(inputs1, self.network, *args, **kwargs)
                 output2 = self.inferer(inputs2, self.network, *args, **kwargs)
                 if len(output1) == 1:
                     if self.loss_function:
-                        loss = self.loss_function(
-                            output1, output2, targets1, targets2
-                        ).item()
+                        loss = self.loss_function(output1, output2, targets1, targets2).item()
                     else:
                         loss = 0
                 elif len(output1) == 2:  # Contrastive+CE
@@ -186,9 +174,7 @@ class SiameseEvaluator(Evaluator):
                     else:
                         loss = 0
                 else:
-                    raise NotImplementedError(
-                        f"SiameseNet expected 1or2 outputs, but got {len(output1)}"
-                    )
+                    raise NotImplementedError(f"SiameseNet expected 1or2 outputs, but got {len(output1)}")
         if len(output1) == 1:
             return {
                 Keys.IMAGE: torch.cat((inputs1, inputs2), dim=0),
@@ -269,15 +255,11 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
             self.keys = custom_keys
 
         if output_latent_code and target_latent_layer is not None:
-            self.network_latent = ModelWithHooks(
-                self.network, target_latent_layer, register_forward=True
-            )
+            self.network_latent = ModelWithHooks(self.network, target_latent_layer, register_forward=True)
         else:
             self.network_latent = None
 
-    def _iteration(
-        self, engine: Engine, batchdata: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         if batchdata is None:
             raise ValueError("Must provide batch data for current iteration.")
         batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
@@ -301,9 +283,7 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
                             engine.state.output[self.keys["BACKWARD"]],
                         ) = self.inferer(inputs, self.network_latent, *args, **kwargs)
                     else:
-                        engine.state.output[self.keys["PRED"]] = self.inferer(
-                            inputs, self.network, *args, **kwargs
-                        )
+                        engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
             else:
                 if self.network_latent:
                     (
@@ -312,9 +292,100 @@ class SupervisedEvaluatorEx(SupervisedEvaluator):
                         engine.state.output[self.keys["BACKWARD"]],
                     ) = self.inferer(inputs, self.network_latent, *args, **kwargs)
                 else:
-                    engine.state.output[self.keys["PRED"]] = self.inferer(
-                        inputs, self.network, *args, **kwargs
-                    )
+                    engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+        engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+        engine.fire_event(IterationEvents.MODEL_COMPLETED)
+
+        return engine.state.output
+
+
+class EnsembleEvaluatorEx(EnsembleEvaluator):
+    """Extension of MONAI's EnsembleEvaluator.
+    Extended: custom_keys: for support strix custom input keys.
+    """
+
+    def __init__(
+        self,
+        device: torch.device,
+        val_data_loader: Union[Iterable, DataLoader],
+        networks: Sequence[torch.nn.Module],
+        pred_keys: Sequence[str],
+        epoch_length: Optional[int] = None,
+        non_blocking: bool = False,
+        prepare_batch: Callable = default_prepare_batch_ex,
+        iteration_update: Optional[Callable] = None,
+        inferer: Optional[Inferer] = None,
+        postprocessing: Optional[Transform] = None,
+        key_val_metric: Optional[Dict[str, Metric]] = None,
+        additional_metrics: Optional[Dict[str, Metric]] = None,
+        metric_cmp_fn: Callable = default_metric_cmp_fn,
+        val_handlers: Optional[Sequence] = None,
+        amp: bool = False,
+        mode: Union[ForwardMode, str] = ForwardMode.EVAL,
+        event_names: Optional[List[Union[str, EventEnum]]] = None,
+        event_to_attr: Optional[dict] = None,
+        decollate: bool = True,
+        custom_keys: Optional[dict] = None,
+    ) -> None:
+        super().__init__(
+            device,
+            val_data_loader,
+            networks,
+            pred_keys,
+            epoch_length,
+            non_blocking,
+            prepare_batch,
+            iteration_update,
+            inferer,
+            postprocessing,
+            key_val_metric,
+            additional_metrics,
+            metric_cmp_fn,
+            val_handlers,
+            amp,
+            mode,
+            event_names,
+            event_to_attr,
+            decollate,
+        )
+        if custom_keys is None:
+            self.keys = {
+                "IMAGE": Keys.IMAGE,
+                "LABEL": Keys.LABEL,
+                "PRED": Keys.PRED,
+                "LOSS": Keys.LOSS,
+            }
+        else:
+            self.keys = custom_keys
+        
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
+        if batchdata is None:
+            raise ValueError("Must provide batch data for current iteration.")
+        batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)  # type: ignore
+        if len(batch) == 2:
+            inputs, targets = batch
+            args: Tuple = ()
+            kwargs: Dict = {}
+        else:
+            inputs, targets, args, kwargs = batch
+
+        # put iteration outputs into engine.state
+        # engine.state.output = {Keys.IMAGE: inputs, Keys.LABEL: targets}  # type: ignore
+        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
+
+        for idx, network in enumerate(self.networks):
+            with self.mode(network):
+                if self.amp:
+                    with torch.cuda.amp.autocast():
+                        if isinstance(engine.state.output, dict):
+                            engine.state.output.update(
+                                {self.pred_keys[idx]: self.inferer(inputs, network, *args, **kwargs)}
+                            )
+                else:
+                    if isinstance(engine.state.output, dict):
+                        engine.state.output.update(
+                            {self.pred_keys[idx]: self.inferer(inputs, network, *args, **kwargs)}
+                        )
         engine.fire_event(IterationEvents.FORWARD_COMPLETED)
         engine.fire_event(IterationEvents.MODEL_COMPLETED)
 

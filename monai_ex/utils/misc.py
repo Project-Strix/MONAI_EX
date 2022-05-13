@@ -8,7 +8,7 @@ from utils_cw import catch_exception
 from .exceptions import GenericException
 
 
-trycatch = partial(catch_exception, handled_exception_type=GenericException)
+trycatch = partial(catch_exception, handled_exception_type=GenericException, path_keywords=['strix','monai_ex'])
 
 
 def ensure_same_dim(tensor1, tensor2):
