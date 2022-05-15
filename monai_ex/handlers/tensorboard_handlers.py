@@ -205,12 +205,12 @@ class TensorboardGraphHandler:
         self,
         net,
         writer,
-        output_transform: Callable = lambda x: x,
+        batch_transform: Callable = lambda x: x,
         logger_name: Optional[str] = None,
     ) -> None:
         self.net = net
         self.writer = writer
-        self.output_transform = output_transform
+        self.batch_transform = batch_transform
         self.logger_name = logger_name
         self.logger = logging.getLogger(logger_name)
 
@@ -218,13 +218,18 @@ class TensorboardGraphHandler:
         if self.logger_name is None:
             self.logger = engine.logger
 
-        engine.add_event_handler(Events.STARTED, self)
+        engine.add_event_handler(Events.ITERATION_COMPLETED(once=1), self)
 
     def __call__(self, engine: Engine) -> None:
-        inputs = self.output_transform(engine.state.output)
-        if inputs is not None:
+        input_images, input_labels = self.batch_transform(engine.state.batch, engine.state.device, engine.non_blocking)
+        if input_images is not None:
+            if isinstance(input_images, (tuple, list)):
+                inputs = (input_images,)  #! temp solution to resolve `add_graph` compatiablity for multi-inputs
+            elif torch.is_tensor(input_images):
+                inputs = input_images[0:1, ...]
+            
             try:
-                self.writer.add_graph(self.net, inputs[0:1, ...], False)
+                self.writer.add_graph(self.net, inputs, False)
             except Exception as e:
                 self.logger.error(
                     f"Error occurred when adding graph to tensorboard: {e}"

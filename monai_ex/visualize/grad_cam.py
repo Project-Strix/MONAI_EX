@@ -8,7 +8,7 @@ from monai.utils import ensure_tuple
 
 
 class GradCAMEx(GradCAM):
-    """Extension of MONAI's GradCAM. Adapted to medlp."""
+    """Extension of MONAI's GradCAM. Adapted to strix."""
 
     def __init__(
         self,

@@ -7,7 +7,7 @@ import nibabel as nib
 
 from monai.utils import exact_version, optional_import
 from monai_ex.visualize import GradCAMEx as GradCAM, LayerCAM
-from medlp.utilities.utils import apply_colormap_on_image
+from strix.utilities.utils import apply_colormap_on_image
 
 from PIL import Image
 from utils_cw import Normalize2

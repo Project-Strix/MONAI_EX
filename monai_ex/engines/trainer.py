@@ -10,7 +10,8 @@ from monai.utils import min_version, optional_import, pytorch_after
 from monai_ex.engines.utils import CustomKeys as Keys
 from monai_ex.engines.utils import default_prepare_batch_ex
 from monai_ex.inferers import Inferer
-from monai_ex.utils import ensure_same_dim
+from monai_ex.utils import GenericException as StrixException
+from monai_ex.utils import ensure_same_dim, trycatch
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
@@ -225,8 +226,14 @@ class SupervisedTrainerEx(SupervisedTrainer):
             self.keys = custom_keys
         self.ensure_dims = ensure_dims
 
+    @trycatch()
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
         if batchdata is None:
+            raise StrixException(
+                "No data were fed into the Trainer engine. "
+                "Consider the possibility that Transforms did not succeed or "
+                "there is a problem with your dataset."
+            )
             raise ValueError("Must provide batch data for current iteration.")
         batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
         if len(batch) == 2:

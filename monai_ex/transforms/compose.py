@@ -2,14 +2,20 @@
 A collection of generic interfaces for MONAI transforms.
 """
 
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any, Callable, Optional, Sequence, Union, TypeVar, List
+import logging
 
+import torch
 import numpy as np
 
 from monai.transforms.compose import Randomizable, Compose
 from monai.transforms.transform import apply_transform
+from monai.transforms.utility.array import DataStats
 from monai.utils import ensure_tuple, get_seed
+from monai_ex.utils.misc import trycatch
+from monai_ex.utils.exceptions import TransformException
 
+ReturnType = TypeVar("ReturnType")
 
 class RandomSelect(Randomizable):
     def __init__(
@@ -45,6 +51,71 @@ class RandomSelect(Randomizable):
             return input_
 
         return apply_transform(self.selected_trans, input_)
+
+
+ReturnType = TypeVar("ReturnType")
+
+def _apply_transform(
+    transform: Callable[..., ReturnType], parameters: Any, unpack_parameters: bool = False
+) -> ReturnType:
+    """
+    Perform transformation `transform` with the provided parameters `parameters`.
+
+    If `parameters` is a tuple and `unpack_items` is True, each parameter of `parameters` is unpacked
+    as arguments to `transform`.
+    Otherwise `parameters` is considered as single argument to `transform`.
+
+    Args:
+        transform: a callable to be used to transform `data`.
+        parameters: parameters for the `transform`.
+        unpack_parameters: whether to unpack parameters for `transform`. Defaults to False.
+
+    Returns:
+        ReturnType: The return type of `transform`.
+    """
+    if isinstance(parameters, tuple) and unpack_parameters:
+        return transform(*parameters)
+
+    return transform(parameters)
+
+def apply_transform_ex(
+    transform: Callable[..., ReturnType],
+    data: Any,
+    map_items: bool = True,
+    unpack_items: bool = False,
+    debug_info=True,
+) -> Union[List[ReturnType], ReturnType]:
+    """ Extension of MONAI's apply_transform function. Able to turnoff debug info.
+    """
+
+    try:
+        if isinstance(data, (list, tuple)) and map_items:
+            return [_apply_transform(transform, item, unpack_items) for item in data]
+        return _apply_transform(transform, data, unpack_items)
+    except Exception as e:
+
+        if not isinstance(transform, Compose) and debug_info:
+            # log the input data information of exact transform in the transform chain
+            datastats = DataStats(data_shape=False, value_range=False)
+            logger = logging.getLogger(datastats._logger_name)
+            logger.info(f"\n=== Transform input info -- {type(transform).__name__} ===")
+            if isinstance(data, (list, tuple)):
+                data = data[0]
+
+            def _log_stats(data, prefix: Optional[str] = "Data"):
+                if isinstance(data, (np.ndarray, torch.Tensor)):
+                    # log data type, shape, range for array
+                    datastats(img=data, data_shape=True, value_range=True, prefix=prefix)  # type: ignore
+                else:
+                    # log data type and value for other meta data
+                    datastats(img=data, data_value=True, prefix=prefix)
+
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    _log_stats(data=v, prefix=k)
+            else:
+                _log_stats(data=data)
+        raise TransformException(f"applying transform {transform}") from e
 
 
 class ComposeEx(Compose):
@@ -83,9 +154,10 @@ class ComposeEx(Compose):
     ) -> None:
         self.transforms += ensure_tuple(transforms)
 
+    @trycatch()
     def __call__(self, input_):
         for _transform in self.transforms:
-            input_ = apply_transform(_transform, input_, self.map_items, self.unpack_items)
+            input_ = apply_transform_ex(_transform, input_, self.map_items, self.unpack_items, debug_info=False)
 
         if self.first:
             return input_[0]

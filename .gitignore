@@ -1,3 +1,5 @@
 /monai_ex.egg-info
 __pycache__/
 .vscode/
+.eggs/
+build/

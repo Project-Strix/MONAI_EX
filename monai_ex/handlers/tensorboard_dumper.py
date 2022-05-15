@@ -10,7 +10,7 @@ else:
     Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
     Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
 
-from medlp.utilities.utils import dump_tensorboard, plot_summary
+from strix.utilities.utils import dump_tensorboard, plot_summary
 
 
 class TensorboardDumper:
