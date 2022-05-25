@@ -57,6 +57,9 @@ class GenerateSyntheticData(Transform):
                 self.channel_dim,
                 self.random_state,
             )
+        
+        if self.num_seg_classes < 1:
+            return img, img
 
         return img, seg
 
