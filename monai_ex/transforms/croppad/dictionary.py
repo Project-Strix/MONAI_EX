@@ -3,7 +3,7 @@ from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List
 import torch
 import numpy as np
 
-from monai.config import KeysCollection
+from monai.config import KeysCollection, NdarrayOrTensor
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.transforms.utils import (
     map_binary_to_indices,
@@ -26,6 +26,7 @@ from monai_ex.transforms.croppad.array import (
     CenterMask2DSliceCrop,
     FullMask2DSliceCrop,
     GetMaxSlices3direcCrop,
+    RandSelectSliceFromImage,
 )
 
 
@@ -405,9 +406,48 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         return results
 
 
+class RandSelectSliceFromImaged(Randomizable, MapTransform):
+    backend = RandSelectSliceFromImage.backend
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        dim: int = 0,
+        num_samples: int = 1,
+        allow_missing_keys: bool = False
+    ) -> None:
+        MapTransform.__init__(self, keys, allow_missing_keys)
+        self.dim = dim
+        self.num_samples = num_samples
+        self.selector = RandSelectSliceFromImage(dim, num_samples)
+
+    def randomize(self, low, high) -> None:
+        return self.R.randint(low, high, size=self.num_samples)
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        first_key: Union[Hashable, List] = self.first_key(d)
+        if first_key == []:
+            return d
+
+        slice_num = d[first_key].shape[1:][self.dim]
+        slice_indices = self.randomize(0, slice_num)
+        
+        results: List[Dict[Hashable, NdarrayOrTensor]] = [dict(d) for _ in range(self.num_samples)]
+
+        for key in self.key_iterator(d):
+            data = d[key]
+            ret = self.selector(d[key], slice_indices)
+            for i, r in enumerate(ret):
+                results[i][key] = r
+        
+        return results
+
+
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
 FullImage2DSliceCropD = FullImage2DSliceCropDict = FullImage2DSliceCropd
 GetMaxSlices3direcCropD = GetMaxSlices3direcCropDict = GetMaxSlices3direcCropd
 RandCropByPosNegLabelExD = RandCropByPosNegLabelExDict = RandCropByPosNegLabelExd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
+RandSelectSliceFromImageD = RandSelectSliceFromImageDict = RandSelectSliceFromImaged
