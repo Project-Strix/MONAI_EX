@@ -5,10 +5,8 @@ import torch
 
 from monai_ex.utils import (
     ensure_list,
-    ensure_tuple,
     ensure_tuple_rep,
     fall_back_tuple,
-    dtype_numpy_to_torch,
 )
 from monai.transforms.utils import (
     map_binary_to_indices,
@@ -17,13 +15,12 @@ from monai.transforms.utils import (
 )
 from monai.transforms import (
     Transform,
+    Randomizable,
     SpatialCrop,
     ResizeWithPadOrCrop,
     RandCropByPosNegLabel,
 )
-from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 
-from monai.transforms.compose import Transform, Randomizable
 from monai.config.type_definitions import NdarrayOrTensor
 
 
@@ -474,7 +471,7 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
         return results
 
 
-class RandSelectSliceFromImage(Randomizable):
+class RandSelectSlicesFromImage(Randomizable):
     backend = SpatialCrop.backend
 
     def __init__(self, dim: int = 0, num_samples: int = 1) -> None:
@@ -486,7 +483,7 @@ class RandSelectSliceFromImage(Randomizable):
         """
         self.dim = dim
         self.num_samples = num_samples
-    
+
     def randomize(self, low, high) -> None:
         return self.R.randint(low, high, size=self.num_samples)
 
@@ -508,5 +505,3 @@ class RandSelectSliceFromImage(Randomizable):
                 else:
                     raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
         return results
-                
-

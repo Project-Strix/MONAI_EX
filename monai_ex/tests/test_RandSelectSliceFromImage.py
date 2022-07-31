@@ -1,13 +1,13 @@
 import pytest
-from monai_ex.transforms.croppad.array import RandSelectSliceFromImage
+from monai_ex.transforms.croppad.array import RandSelectSlicesFromImage
 import numpy as np 
 import torch 
 
 @pytest.mark.parametrize('dim', [0, 1, 2])
 @pytest.mark.parametrize('use_np', [True, False])
-@pytest.mark.parametrize('num', [1,2])
+@pytest.mark.parametrize('num', [1, 2])
 def test_kspace_resample(dim, use_np, num):
-    cropper = RandSelectSliceFromImage(dim, num_samples=num)
+    cropper = RandSelectSlicesFromImage(dim, num_samples=num)
     if use_np:
         image = np.random.rand(1, 4, 5, 6)
     else:
