@@ -1,14 +1,12 @@
-from typing import List, Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union, Any
 
 import numpy as np
 import torch
 
 from monai_ex.utils import (
     ensure_list,
-    ensure_tuple,
     ensure_tuple_rep,
     fall_back_tuple,
-    dtype_numpy_to_torch,
 )
 from monai.transforms.utils import (
     map_binary_to_indices,
@@ -17,26 +15,13 @@ from monai.transforms.utils import (
 )
 from monai.transforms import (
     Transform,
+    Randomizable,
     SpatialCrop,
     ResizeWithPadOrCrop,
     RandCropByPosNegLabel,
 )
-from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 
-from monai.transforms.compose import MapTransform, Transform, Randomizable
-
-try:
-    # PT_BEFORE_1_8 = torch.__version__ != "1.8.0" and version_leq(torch.__version__, "1.8.0")
-    PT_BEFORE_1_8 = float(torch.__version__[:3]) < 1.8
-except (AttributeError, TypeError):
-    PT_BEFORE_1_8 = True
-
-if PT_BEFORE_1_8:
-    import numpy.fft as fft
-    from numpy import absolute
-else:
-    import torch.fft as fft
-    from torch import absolute
+from monai.config.type_definitions import NdarrayOrTensor
 
 
 class CenterMask2DSliceCrop(Transform):
@@ -303,6 +288,8 @@ class FullImage2DSliceCrop(CenterMask2DSliceCrop):
         centers = self.get_center_pos_(mask_data_)
         slices = [super(FullImage2DSliceCrop, self).__call__(img, msk, center) for center in centers]
         return slices
+
+
 class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
     """Extension of RandCropByPosNegLabel.
     Extended: offset.
@@ -481,4 +468,40 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
                     cropper = SpatialCrop(roi_center=tuple(center), spatial_size=self.spatial_size)  # type: ignore
                 results.append(cropper(img))
 
+        return results
+
+
+class RandSelectSlicesFromImage(Randomizable):
+    backend = SpatialCrop.backend
+
+    def __init__(self, dim: int = 0, num_samples: int = 1) -> None:
+        """Randomly select one slice from 3D volume along given axis.
+
+        Args:
+            dim (int, optional): The axis to randomly select, ignoring the channel dim and must be postive. Defaults to 0.
+            num_samples (int, optional): The slice number selected once. Defaults to 1.
+        """
+        self.dim = dim
+        self.num_samples = num_samples
+
+    def randomize(self, low, high) -> None:
+        return self.R.randint(low, high, size=self.num_samples)
+
+    def __call__(self, img: NdarrayOrTensor, slice_idx: Optional[Union[int, np.ndarray]] = None) -> Any:
+        spatial_shape = img.shape[1:]
+        slice_num = spatial_shape[self.dim]
+        if slice_idx is None:
+            slice_indices = self.randomize(0, slice_num)
+        else:
+            slice_indices = slice_idx
+
+        results: List[NdarrayOrTensor] = []
+        if slice_indices is not None:                
+            for index in slice_indices:
+                if isinstance(img, np.ndarray):
+                    results.append(np.take(img, index, axis=self.dim+1))
+                elif isinstance(img, torch.Tensor):
+                    results.append(torch.index_select(img, dim=self.dim+1, index=torch.tensor(index)).squeeze(self.dim+1))
+                else:
+                    raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
         return results
