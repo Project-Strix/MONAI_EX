@@ -57,7 +57,7 @@ class GenerateSyntheticData(Transform):
                 self.channel_dim,
                 self.random_state,
             )
-        
+
         if self.num_seg_classes < 1:
             return img, img
 
@@ -88,9 +88,7 @@ class GenerateRandomData(Transform):
             image = np.random.rand(self.width, self.height)
 
         if self.channel_dim is not None:
-            if not (
-                isinstance(self.channel_dim, int) and self.channel_dim in (-1, 0, 3)
-            ):
+            if not (isinstance(self.channel_dim, int) and self.channel_dim in (-1, 0, 3)):
                 raise AssertionError("invalid channel dim.")
             image = image[None] if self.channel_dim == 0 else image[..., None]
 
