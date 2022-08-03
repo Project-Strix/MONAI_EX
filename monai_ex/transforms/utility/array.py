@@ -9,8 +9,7 @@ from monai.transforms.compose import Transform, Randomizable
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.transforms.utils import generate_pos_neg_label_crop_centers, map_binary_to_indices
 from monai.config import NdarrayTensor, DtypeLike
-from monai_ex.utils import convert_data_type_ex
-from strix.utilities.utils import bbox_3D
+from monai_ex.utils import convert_data_type_ex, bbox_ND
 
 
 class CastToTypeEx(CastToType):
@@ -243,11 +242,11 @@ class RandSoftCopyPaste(Randomizable, Transform):
         if target_mask is None:
             pass
         else:
-            x1, x2, y1, y2, z1, z2 = bbox_3D(softed_mask[0, ...])
-            x_sz, y_sz, z_sz = x2 - x1, y2 - y1, z2 - z1
+            boundingbox = bbox_ND(softed_mask[0, ...])
+            bbox_size = tuple(boundingbox[2 * i + 1] - boundingbox[2 * i] for i in range(len(boundingbox) // 2))
             fg_indices_, bg_indices_ = map_binary_to_indices(target_mask, None, None)
             centers = generate_pos_neg_label_crop_centers(
-                (x_sz, y_sz, z_sz),
+                bbox_size,
                 1,
                 1,
                 softed_mask.shape[1:],
@@ -259,12 +258,14 @@ class RandSoftCopyPaste(Randomizable, Transform):
 
             shifted_src_image = np.zeros_like(target_image)
             shifted_src_mask = np.zeros_like(target_image)
-            x_range = slice(int(centers[0][0] - x_sz // 2), int(centers[0][0] - x_sz // 2 + x_sz))
-            y_range = slice(int(centers[0][1] - y_sz // 2), int(centers[0][1] - y_sz // 2 + y_sz))
-            z_range = slice(int(centers[0][2] - z_sz // 2), int(centers[0][2] - z_sz // 2 + z_sz))
+            n_ch = shifted_src_mask.shape[0]
+            tar_ranges = tuple(slice(int(center - sz // 2), int(center - sz // 2 + sz)) for center, sz in zip(centers[0], bbox_size))
+            tar_slices = [slice(n_ch), *tar_ranges]
+            src_ranges = tuple(slice(boundingbox[2 * i], boundingbox[2 * i + 1]) for i in range(len(boundingbox) // 2))
+            src_slices = [slice(n_ch), *src_ranges]
 
-            shifted_src_image[:, x_range, y_range, z_range] = softed_image[:, x1:x2, y1:y2, z1:z2]
-            shifted_src_mask[:, x_range, y_range, z_range] = softed_mask[:, x1:x2, y1:y2, z1:z2]
+            shifted_src_image[tar_slices] = softed_image[src_slices]
+            shifted_src_mask[tar_slices] = softed_mask[src_slices]
             sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
             return sythetic_image
 

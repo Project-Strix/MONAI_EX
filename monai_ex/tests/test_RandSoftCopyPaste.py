@@ -8,8 +8,9 @@ from monai_ex.transforms.utility.array import RandSoftCopyPaste
 from monai.data.synthetic import create_test_image_3d
 from monai_ex.transforms.io.array import GenerateSyntheticData
 
-def test_randsoftcopypaste():
-    spatial_size = (100, 100, 100)
+@pytest.mark.parametrize('dim', [2, 3])
+def test_randsoftcopypaste(dim):
+    spatial_size = (100,) * dim
     generator = GenerateSyntheticData(
         *spatial_size,
         num_objs=1,
@@ -29,5 +30,5 @@ def test_randsoftcopypaste():
 
     assert sythetic_img.shape == (1, *spatial_size)
 
-    # save_fpath = Path.home() / "sythetic_img.nii.gz"
-    # nib.save(nib.Nifti1Image(sythetic_img.squeeze(), np.eye(4)), save_fpath)
+    save_fpath = Path.home() / f"sythetic_img_{dim}.nii.gz"
+    nib.save(nib.Nifti1Image(sythetic_img.squeeze(), np.eye(4)), save_fpath)
