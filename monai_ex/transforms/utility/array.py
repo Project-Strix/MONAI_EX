@@ -7,8 +7,9 @@ from scipy import ndimage as ndi
 
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms import DataStats, SaveImage, CastToType
+from monai.transforms.utils import generate_pos_neg_label_crop_centers, map_binary_to_indices
 from monai.config import NdarrayTensor, DtypeLike
-from monai_ex.utils import convert_data_type_ex
+from monai_ex.utils import convert_data_type_ex, bbox_ND
 
 
 class CastToTypeEx(CastToType):
@@ -24,9 +25,7 @@ class CastToTypeEx(CastToType):
         """
         self.dtype = dtype
 
-    def __call__(
-        self, img: Any, dtype: Optional[Union[DtypeLike, torch.dtype]] = None
-    ) -> Any:
+    def __call__(self, img: Any, dtype: Optional[Union[DtypeLike, torch.dtype]] = None) -> Any:
         """
         Apply the transform to `img`, assuming `img` is a numpy array or PyTorch Tensor.
 
@@ -39,12 +38,8 @@ class CastToTypeEx(CastToType):
         """
         type_list = (torch.Tensor, np.ndarray, int, bool, float, list, tuple)
         if not isinstance(img, type_list):
-            raise TypeError(
-                f"img must be one of ({type_list}) but is {type(img).__name__}."
-            )
-        img_out, *_ = convert_data_type_ex(
-            img, output_type=type(img), dtype=dtype or self.dtype
-        )
+            raise TypeError(f"img must be one of ({type_list}) but is {type(img).__name__}.")
+        img_out, *_ = convert_data_type_ex(img, output_type=type(img), dtype=dtype or self.dtype)
         return img_out
 
 
@@ -53,7 +48,7 @@ class ToTensorEx(Transform):
     Converts the input image to a tensor without applying any other transformations.
     """
 
-    def __call__(self, img: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def __call__(self, img: NdarrayTensor) -> torch.Tensor:
         """
         Apply the transform to `img` and make it contiguous.
         """
@@ -105,9 +100,7 @@ class DataStatsEx(DataStats):
         data_value: Optional[bool] = None,
         additional_info: Optional[Callable] = None,
     ) -> NdarrayTensor:
-        img = super().__init__(
-            img, prefix, data_type, data_shape, value_range, data_value, additional_info
-        )
+        img = super().__init__(img, prefix, data_type, data_shape, value_range, data_value, additional_info)
 
         if self.save_data:
             saver = SaveImage(
@@ -204,12 +197,104 @@ class RandLabelToMask(Randomizable, Transform):
         if img.shape[0] > 1:
             data = img[[self.select_label]]
         else:
-            data = np.where(np.in1d(img, self.select_label), True, False).reshape(
-                img.shape
-            )
+            data = np.where(np.in1d(img, self.select_label), True, False).reshape(img.shape)
 
-        return (
-            np.any(data, axis=0, keepdims=True)
-            if (merge_channels or self.merge_channels)
-            else data
+        return np.any(data, axis=0, keepdims=True) if (merge_channels or self.merge_channels) else data
+
+
+class RandSoftCopyPaste(Randomizable, Transform):
+    """
+    Perform Soft Copy&Paste augmentation.
+    Reference: `https://arxiv.org/ftp/arxiv/papers/2203/2203.10507.pdf`
+    """
+
+    def __init__(
+        self,
+        k_erode: int,
+        k_dilate: int,
+        alpha: float = 0.8,
+        label_idx: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        self.k_erode = k_erode
+        self.k_dilate = k_dilate
+        self.alpha = alpha
+        self.label_idx = label_idx
+
+    def soften(self, src_mask):
+        struct = ndi.generate_binary_structure(src_mask.ndim, 2)
+        mask = ndi.binary_erosion(src_mask, struct, iterations=self.k_erode).astype(src_mask.dtype)
+        for j in range(self.k_dilate):
+            mask_binary = np.where(mask > 0, 1, 0)
+            mask_dilate = ndi.binary_dilation(mask_binary, struct, iterations=1).astype(mask.dtype)
+            mask_alpha = mask_dilate * (self.alpha ** (j + 1))
+            mask = (1 - mask) * mask_alpha + mask
+
+        return mask
+
+    def paste(
+        self,
+        softed_image: NdarrayTensor,
+        softed_mask: NdarrayTensor,
+        target_image: NdarrayTensor,
+        target_mask: NdarrayTensor,
+    ):
+        n_ch = target_image.shape[0]
+        boundingbox = bbox_ND(softed_mask[0, ...])
+        bbox_size = tuple(boundingbox[2 * i + 1] - boundingbox[2 * i] for i in range(len(boundingbox) // 2))
+        src_ranges = tuple(slice(boundingbox[2 * i], boundingbox[2 * i + 1]) for i in range(len(boundingbox) // 2))
+        src_slices = [slice(n_ch), *src_ranges]
+
+        if target_mask is None:
+            # ! if no target mask is provided, paste to orignal pos.
+            tar_slices = src_slices
+        else:
+            fg_indices_, bg_indices_ = map_binary_to_indices(target_mask, None, None)
+            centers = generate_pos_neg_label_crop_centers(
+                bbox_size,
+                1,
+                1,
+                softed_mask.shape[1:],
+                fg_indices_,
+                bg_indices_,
+                self.R,
+                False,
+            )
+            tar_ranges = tuple(slice(int(center - sz // 2), int(center - sz // 2 + sz)) for center, sz in zip(centers[0], bbox_size))
+            tar_slices = [slice(n_ch), *tar_ranges]
+
+        shifted_src_image = np.zeros_like(target_image)
+        shifted_src_mask = np.zeros_like(target_image)
+        shifted_src_image[tar_slices] = softed_image[src_slices]
+        shifted_src_mask[tar_slices] = softed_mask[src_slices]
+        sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
+        return sythetic_image
+
+    def __call__(
+        self,
+        source_image: NdarrayTensor,
+        source_mask: NdarrayTensor,
+        target_image: NdarrayTensor,
+        target_mask: Optional[NdarrayTensor] = None,
+    ) -> NdarrayTensor:
+        if source_mask.shape[0] > 1:
+            if self.label_idx is None:
+                raise ValueError("Multi-channel label data need to specify label_idx")
+            else:
+                source_mask = source_mask[self.label_idx, ...]
+        elif source_mask.shape[0] == 1:
+            if self.label_idx is None:
+                source_mask = (source_mask > 0).squeeze(0)
+            else:
+                source_mask = (source_mask == self.label_idx).squeeze(0)
+
+        softed_mask = self.soften(source_mask)
+        softed_mask = softed_mask[np.newaxis, ...]
+        if source_image.shape[0] > 1:
+            softed_mask = np.repeat(softed_mask, repeats=source_image.shape[0], axis=0)
+
+        softed_image = source_image * softed_mask
+        sythetic_image = self.paste(
+            softed_image=softed_image, softed_mask=softed_mask, target_image=target_image, target_mask=target_mask
         )
+        return sythetic_image
