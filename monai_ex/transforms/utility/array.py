@@ -239,11 +239,16 @@ class RandSoftCopyPaste(Randomizable, Transform):
         target_image: NdarrayTensor,
         target_mask: NdarrayTensor,
     ):
+        n_ch = target_image.shape[0]
+        boundingbox = bbox_ND(softed_mask[0, ...])
+        bbox_size = tuple(boundingbox[2 * i + 1] - boundingbox[2 * i] for i in range(len(boundingbox) // 2))
+        src_ranges = tuple(slice(boundingbox[2 * i], boundingbox[2 * i + 1]) for i in range(len(boundingbox) // 2))
+        src_slices = [slice(n_ch), *src_ranges]
+
         if target_mask is None:
-            pass
+            # ! if no target mask is provided, paste to orignal pos.
+            tar_slices = src_slices
         else:
-            boundingbox = bbox_ND(softed_mask[0, ...])
-            bbox_size = tuple(boundingbox[2 * i + 1] - boundingbox[2 * i] for i in range(len(boundingbox) // 2))
             fg_indices_, bg_indices_ = map_binary_to_indices(target_mask, None, None)
             centers = generate_pos_neg_label_crop_centers(
                 bbox_size,
@@ -255,19 +260,15 @@ class RandSoftCopyPaste(Randomizable, Transform):
                 self.R,
                 False,
             )
-
-            shifted_src_image = np.zeros_like(target_image)
-            shifted_src_mask = np.zeros_like(target_image)
-            n_ch = shifted_src_mask.shape[0]
             tar_ranges = tuple(slice(int(center - sz // 2), int(center - sz // 2 + sz)) for center, sz in zip(centers[0], bbox_size))
             tar_slices = [slice(n_ch), *tar_ranges]
-            src_ranges = tuple(slice(boundingbox[2 * i], boundingbox[2 * i + 1]) for i in range(len(boundingbox) // 2))
-            src_slices = [slice(n_ch), *src_ranges]
 
-            shifted_src_image[tar_slices] = softed_image[src_slices]
-            shifted_src_mask[tar_slices] = softed_mask[src_slices]
-            sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
-            return sythetic_image
+        shifted_src_image = np.zeros_like(target_image)
+        shifted_src_mask = np.zeros_like(target_image)
+        shifted_src_image[tar_slices] = softed_image[src_slices]
+        shifted_src_mask[tar_slices] = softed_mask[src_slices]
+        sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
+        return sythetic_image
 
     def __call__(
         self,
