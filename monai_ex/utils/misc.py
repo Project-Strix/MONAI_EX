@@ -1,14 +1,36 @@
+import itertools
+from functools import partial
 from typing import Any, List
 
-import torch 
-
+import numpy as np
+import torch
 from monai.utils.misc import issequenceiterable
-from functools import partial
 from utils_cw import catch_exception
+
 from .exceptions import GenericException
 
+trycatch = partial(catch_exception, handled_exception_type=GenericException, path_keywords=["strix", "monai_ex"])
 
-trycatch = partial(catch_exception, handled_exception_type=GenericException, path_keywords=['strix','monai_ex'])
+
+# Copied from strix
+def bbox_ND(img: np.ndarray, return_range: bool = False):
+    """Compute boundingbox of n-dimensional data.
+
+    Args:
+        img (np.ndarray): Input nd data.
+        return_range (bool, optional): if return size of each boundingbox. Defaults to False.
+
+    Returns:
+        list: boundingbox coord/size list
+    """
+    N = img.ndim
+    out = []
+    for ax in itertools.combinations(reversed(range(N)), N - 1):
+        nonzero = np.any(img, axis=ax)
+        out.extend(np.where(nonzero)[0][[0, -1]])
+    if return_range:
+        return tuple(out[2 * i + 1] - out[2 * i] for i in range(len(out) // 2))
+    return tuple(out)
 
 
 def ensure_same_dim(tensor1, tensor2):
@@ -30,7 +52,9 @@ def ensure_list(vals: Any):
     Returns a list of `vals`.
     """
     if not issequenceiterable(vals) or isinstance(vals, dict):
-        vals = [vals, ]
+        vals = [
+            vals,
+        ]
 
     return list(vals)
 
@@ -43,7 +67,9 @@ def ensure_list_rep(vals: Any, dim: int) -> List[Any]:
         ValueError: When ``tup`` is a sequence and ``tup`` length is not ``dim``.
     """
     if not issequenceiterable(vals):
-        return [vals,] * dim
+        return [
+            vals,
+        ] * dim
     elif len(vals) == dim:
         return list(vals)
 
@@ -56,7 +82,7 @@ def _register_generic(module_dict, module_name, module):
 
 
 class Registry(dict):
-    '''
+    """
     A helper class for managing registering modules, it extends a dictionary
     and provides a register functions.
 
@@ -76,7 +102,8 @@ class Registry(dict):
 
     Access of module is just like using a dictionary, eg:
         f = some_registry["foo_modeul"]
-    '''
+    """
+
     def __init__(self, *args, **kwargs):
         super(Registry, self).__init__(*args, **kwargs)
 
