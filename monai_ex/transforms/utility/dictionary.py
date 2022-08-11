@@ -3,11 +3,13 @@ from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Union,
 
 import numpy as np
 import torch
+from torch.utils.data import Dataset
 
 from monai.config import KeysCollection, NdarrayTensor, NdarrayOrTensor
 from monai.transforms.compose import MapTransform, Randomizable
 from monai.utils import ensure_tuple_rep
 from monai_ex.utils import ensure_list
+from monai_ex.utils.exceptions import TransformException
 
 from monai.transforms import SplitChannel
 from monai_ex.transforms.utility.array import (
@@ -16,6 +18,7 @@ from monai_ex.transforms.utility.array import (
     DataStatsEx,
     DataLabelling,
     RandLabelToMask,
+    RandSoftCopyPaste
 )
 
 from monai_ex.transforms import (
@@ -444,6 +447,56 @@ class GetItemd(MapTransform):
         for key, index in self.key_iterator(d, self.index):
             d[key] = d[key][index]
         return d
+
+
+class RandSoftCopyPasted(Randomizable, MapTransform):
+    """Dictionary-based wrapper of :py:class:`monai_ex.transforms.RandSoftCopyPaste`.
+
+    Args:
+        keys (KeysCollection): keys of the corresponding items to be transformed
+        mask_key (Optional[str]): key of the mask data
+        source_dataset (Dataset): a dataset return source image and mask
+        k_erode (int): erosion times.
+        k_dilate (int): dilation times.
+        alpha (float, optional): alpha. Defaults to 0.8.
+        label_idx (Optional[int], optional): the label of souce mask to be proceed. Defaults to None.
+    """
+    def __init__(
+        self,
+        keys: KeysCollection,
+        mask_key: Optional[str],
+        source_dataset: Dataset,
+        k_erode: int,
+        k_dilate: int,
+        alpha: float = 0.8,
+        label_idx: Optional[int] = None,
+    ) -> None:
+        super().__init__(keys)
+        self.mask_key = mask_key
+        self.source_dataset = source_dataset
+        self.generator = RandSoftCopyPaste(k_erode, k_dilate, alpha, label_idx)
+
+    def randomize(self) -> None:
+        return self.R.randint(len(self.source_dataset))
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        idx = self.randomize()
+
+        d = dict(data)
+        for key in self.key_iterator(d):
+            target_image = d[key]
+            target_mask = d[self.mask_key] if self.mask_key else None
+
+            try:
+                source_image, source_mask = self.source_dataset[idx]
+            except ValueError as e:
+                raise TransformException("Source dataset should return two data: source_image, source_mask.\nErr msg: {e}")
+            else:
+                d[key] = self.generator(source_image, source_mask, target_image, target_mask)
+
+        return d
+
 
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
