@@ -477,8 +477,8 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
         super().__init__(keys)
         self.mask_key = mask_key
         self.source_dataset = source_dataset
-        self.generator = RandSoftCopyPaste(k_erode, k_dilate, alpha, source_label_value, log_name)
-        self.mask_select_fn = mask_select_fn
+        self.source_label_value = source_label_value
+        self.generator = RandSoftCopyPaste(k_erode, k_dilate, alpha, mask_select_fn, source_label_value, log_name)
         self.logger = logging.getLogger(log_name)
 
     def randomize(self) -> None:
@@ -496,10 +496,11 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
             try:
                 source_image, source_mask = self.source_dataset[idx]
             except ValueError as e:
-                raise TransformException("Source dataset should return two data: source_image, source_mask.\nErr msg: {e}")
+                raise TransformException("Source dataset should return a tuple: (source_image, source_mask).\nErr msg: {e}")
             else:
-                d[key] = self.generator(source_image, source_mask, target_image, self.mask_select_fn(target_mask))
-
+                sythetic_image, sythetic_mask = self.generator(source_image, source_mask, target_image, target_mask)
+                d[key] = sythetic_image
+                d[self.mask_key] = sythetic_mask
         return d
 
 

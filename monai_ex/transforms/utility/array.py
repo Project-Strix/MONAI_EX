@@ -7,7 +7,7 @@ from scipy import ndimage as ndi
 
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms import DataStats, SaveImage, CastToType
-from monai.transforms.utils import generate_pos_neg_label_crop_centers, map_binary_to_indices
+from monai.transforms.utils import generate_pos_neg_label_crop_centers, map_binary_to_indices, is_positive
 from monai.config import NdarrayTensor, DtypeLike
 from monai_ex.utils import convert_data_type_ex, bbox_ND
 
@@ -213,6 +213,7 @@ class RandSoftCopyPaste(Randomizable, Transform):
         k_erode: int,
         k_dilate: int,
         alpha: float = 0.8,
+        mask_select_fn: Callable = is_positive,
         source_label_value: Optional[int] = None,
         log_name: Optional[str] = None,
     ) -> None:
@@ -220,6 +221,7 @@ class RandSoftCopyPaste(Randomizable, Transform):
         self.k_erode = k_erode
         self.k_dilate = k_dilate
         self.alpha = alpha
+        self.mask_select_fn = mask_select_fn
         self.source_label_value = source_label_value
         self.logger = logging.getLogger(log_name)
 
@@ -237,6 +239,7 @@ class RandSoftCopyPaste(Randomizable, Transform):
     def paste(
         self,
         softed_image: NdarrayTensor,
+        origin_mask: NdarrayTensor,
         softed_mask: NdarrayTensor,
         target_image: NdarrayTensor,
         target_mask: NdarrayTensor,
@@ -245,13 +248,13 @@ class RandSoftCopyPaste(Randomizable, Transform):
         boundingbox = bbox_ND(softed_mask[0, ...])
         bbox_size = tuple(boundingbox[2 * i + 1] - boundingbox[2 * i] for i in range(len(boundingbox) // 2))
         src_ranges = tuple(slice(boundingbox[2 * i], boundingbox[2 * i + 1]) for i in range(len(boundingbox) // 2))
-        src_slices = [slice(n_ch), *src_ranges]
+        src_slices = (slice(n_ch), *src_ranges)
 
         if target_mask is None:
             # ! if no target mask is provided, paste to orignal pos.
             tar_slices = src_slices
         else:
-            fg_indices_, bg_indices_ = map_binary_to_indices(target_mask, None, None)
+            fg_indices_, bg_indices_ = map_binary_to_indices(self.mask_select_fn(target_mask), None, None)
             centers = generate_pos_neg_label_crop_centers(
                 bbox_size,
                 1,
@@ -263,14 +266,15 @@ class RandSoftCopyPaste(Randomizable, Transform):
                 False,
             )
             tar_ranges = tuple(slice(int(center - sz // 2), int(center - sz // 2 + sz)) for center, sz in zip(centers[0], bbox_size))
-            tar_slices = [slice(n_ch), *tar_ranges]
+            tar_slices = (slice(n_ch), *tar_ranges)
 
         shifted_src_image = np.zeros_like(target_image)
         shifted_src_mask = np.zeros_like(target_image)
         shifted_src_image[tar_slices] = softed_image[src_slices]
         shifted_src_mask[tar_slices] = softed_mask[src_slices]
         sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
-        return sythetic_image
+        shifted_src_mask[tar_slices] = origin_mask[src_slices]
+        return sythetic_image, shifted_src_mask
 
     def __call__(
         self,
@@ -296,7 +300,19 @@ class RandSoftCopyPaste(Randomizable, Transform):
             softed_mask = np.repeat(softed_mask, repeats=source_image.shape[0], axis=0)
 
         softed_image = source_image * softed_mask
-        sythetic_image = self.paste(
-            softed_image=softed_image, softed_mask=softed_mask, target_image=target_image, target_mask=target_mask
+        sythetic_image, shifted_src_mask = self.paste(
+            softed_image=softed_image,
+            origin_mask=source_mask[None],
+            softed_mask=softed_mask,
+            target_image=target_image,
+            target_mask=target_mask
         )
-        return sythetic_image
+
+        if target_mask is None:
+            shifted_src_mask[shifted_src_mask > 0] = self.source_label_value
+            sythetic_mask = shifted_src_mask
+        else:
+            target_mask[shifted_src_mask > 0] = self.source_label_value
+            sythetic_mask = target_mask
+
+        return sythetic_image, sythetic_mask
