@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from scipy import ndimage as ndi
 
-from monai.transforms.compose import Transform, Randomizable
+from monai.transforms.compose import Transform, Randomizable, RandomizableTransform
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.transforms.utils import generate_pos_neg_label_crop_centers, map_binary_to_indices, is_positive
 from monai.config import NdarrayTensor, DtypeLike
@@ -202,7 +202,7 @@ class RandLabelToMask(Randomizable, Transform):
         return np.any(data, axis=0, keepdims=True) if (merge_channels or self.merge_channels) else data
 
 
-class RandSoftCopyPaste(Randomizable, Transform):
+class RandSoftCopyPaste(RandomizableTransform):
     """
     Perform Soft Copy&Paste augmentation.
     Reference: `https://arxiv.org/ftp/arxiv/papers/2203/2203.10507.pdf`
@@ -213,11 +213,12 @@ class RandSoftCopyPaste(Randomizable, Transform):
         k_erode: int,
         k_dilate: int,
         alpha: float = 0.8,
+        prob: float = 0.1,
         mask_select_fn: Callable = is_positive,
         source_label_value: Optional[int] = None,
         log_name: Optional[str] = None,
     ) -> None:
-        super().__init__()
+        RandomizableTransform.__init__(self, prob)
         self.k_erode = k_erode
         self.k_dilate = k_dilate
         self.alpha = alpha
@@ -278,11 +279,15 @@ class RandSoftCopyPaste(Randomizable, Transform):
 
     def __call__(
         self,
+        image: NdarrayTensor,
+        mask: Optional[NdarrayTensor],
         source_image: NdarrayTensor,
         source_mask: NdarrayTensor,
-        target_image: NdarrayTensor,
-        target_mask: Optional[NdarrayTensor] = None,
     ) -> NdarrayTensor:
+        self.randomize(None)
+        if not self._do_transform:
+            return image, mask
+
         if source_mask.shape[0] > 1:
             if self.source_label_value is None:
                 raise ValueError("Multi-channel label data need to specify label_idx")
@@ -304,15 +309,15 @@ class RandSoftCopyPaste(Randomizable, Transform):
             softed_image=softed_image,
             origin_mask=source_mask[None],
             softed_mask=softed_mask,
-            target_image=target_image,
-            target_mask=target_mask
+            target_image=image,
+            target_mask=mask
         )
 
-        if target_mask is None:
+        if mask is None:
             shifted_src_mask[shifted_src_mask > 0] = self.source_label_value
             sythetic_mask = shifted_src_mask
         else:
-            target_mask[shifted_src_mask > 0] = self.source_label_value
-            sythetic_mask = target_mask
+            mask[shifted_src_mask > 0] = self.source_label_value
+            sythetic_mask = mask
 
         return sythetic_image, sythetic_mask
