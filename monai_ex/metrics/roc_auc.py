@@ -99,7 +99,7 @@ def save_roc_curve_fn(
     auc_ci = acc_ci = bal_acc_ci = ppv_ci = tpr_ci = f1_ci = 0
     if CI:
         ci = 0.95
-        auc_ci = compute_CI(y_true, y_pred_binary, roc_auc_score, CI_index=ci)
+        auc_ci = compute_CI(y_true, y_pred, roc_auc_score, CI_index=ci)
         acc_ci = compute_CI(y_true, y_pred_binary, accuracy_score, CI_index=ci)
         bal_acc_ci = compute_CI(y_true, y_pred_binary, balanced_accuracy_score, CI_index=ci)
         ppv_ci = compute_CI(y_true, y_pred_binary, partial(precision_score, average=average_type), CI_index=ci)
