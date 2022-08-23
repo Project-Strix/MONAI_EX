@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence, Union, Any
+from typing import List, Optional, Sequence, Union, Any, Callable
 
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ from monai_ex.utils import (
     fall_back_tuple,
 )
 from monai.transforms.utils import (
+    is_positive,
     map_binary_to_indices,
     generate_spatial_bounding_box,
     generate_pos_neg_label_crop_centers,
@@ -25,15 +26,21 @@ from monai.config.type_definitions import NdarrayOrTensor
 
 
 class CenterMask2DSliceCrop(Transform):
-    """
-    Extract 2D slices from the image at the
-    center of mask with specified ROI size.
+    """Extract 2D slices from the image at the
+        center of mask with specified ROI size.
 
     Args:
-        roi_size: the spatial size of the crop region e.g. [224,224,128]
-            If its components have non-positive values, the corresponding size of input image will be used.
-    """
+        roi_size (Union[Sequence[int], int]): the 2D spatial size of the crop region e.g. [224,224]
+        crop_mode (str): 2D slice crop mode: "single", "cross", "parallel"
+        z_axis (int): the index of z axis (channel dim not counted)
+        center_mode (Optional[str], optional): center point calculation mode: "center", "maximum". Defaults to "center".
+        mask_data (Optional[np.ndarray], optional): mask data. Defaults to None.
+        n_slices (int, optional): the slice# will be croped, if crop_mode is "cross" or "parallel". Defaults to 3.
 
+    Raises:
+        ValueError: _description_
+        ValueError: _description_
+    """
     def __init__(
         self,
         roi_size: Union[Sequence[int], int],
@@ -469,6 +476,55 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
                 results.append(cropper(img))
 
         return results
+
+
+class SelectSlicesByMask(CenterMask2DSliceCrop):
+    backend = SpatialCrop.backend
+
+    def __init__(
+        self,
+        z_axis: int,
+        center_mode: Optional[str] = "center",
+        mask_data: Optional[np.ndarray] = None,
+        mask_select_fn: Callable = is_positive,
+    ) -> None:
+        """Select one slice based on mask data
+
+        Args:
+            roi_size (Union[Sequence[int], int]): the 2D spatial size of the crop region e.g. [224,224]
+            z_axis (int): the index of z axis (channel dim not counted)
+            center_mode (Optional[str], optional): center point calculation mode: "center", "maximum". Defaults to "center".
+            mask_data (Optional[np.ndarray], optional): mask data. Defaults to None.
+        """
+        self.mask_select_fn = mask_select_fn
+        super().__init__(None, "single", z_axis, center_mode, mask_data, 1)
+
+    def __call__(
+        self,
+        img: np.ndarray,
+        msk: Optional[np.ndarray] = None,
+    ) -> Any:
+        if self.mask_data is None and msk is None:
+            raise ValueError("Unknown mask_data.")
+
+        mask_data_ = msk if msk is not None else self.mask_data
+        mask_data_ = self.mask_select_fn(mask_data_)
+
+        if mask_data_.shape[0] != 1 and mask_data_.shape[0] != img.shape[0]:
+            raise ValueError(
+                "When mask_data is not single channel, mask_data channels must match img, "
+                f"got img={img.shape[0]} mask_data={mask_data_.shape[0]}."
+            )
+
+        center = self.get_center_pos(mask_data_, self.z_axis)
+        slice_idx = center[self.z_axis]
+
+        if isinstance(img, np.ndarray):
+            return np.take(img, slice_idx, axis=self.z_axis + 1)
+        elif isinstance(img, torch.Tensor):
+            return torch.index_select(img, dim=self.z_axis + 1, index=torch.tensor(slice_idx)).squeeze(self.z_axis + 1)
+        else:
+            raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
 
 
 class RandSelectSlicesFromImage(Randomizable):

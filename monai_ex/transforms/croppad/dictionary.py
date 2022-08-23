@@ -1,4 +1,4 @@
-from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List
+from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List, Callable
 
 import torch
 import numpy as np
@@ -10,6 +10,7 @@ from monai.transforms.utils import (
     generate_pos_neg_label_crop_centers,
 )
 from monai.transforms import (
+    is_positive,
     RandCropByPosNegLabeld,
     SpatialCrop,
     ResizeWithPadOrCrop,
@@ -27,6 +28,7 @@ from monai_ex.transforms.croppad.array import (
     FullMask2DSliceCrop,
     GetMaxSlices3direcCrop,
     RandSelectSlicesFromImage,
+    SelectSlicesByMask,
 )
 
 
@@ -406,15 +408,39 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         return results
 
 
-class RandSelectSlicesFromImaged(Randomizable, MapTransform):
-    backend = RandSelectSlicesFromImage.backend
+class SelectSlicesByMaskd(MapTransform):
+    backend = SelectSlicesByMask.backend
 
     def __init__(
         self,
         keys: KeysCollection,
-        dim: int = 0,
-        num_samples: int = 1,
-        allow_missing_keys: bool = False
+        mask_key: str,
+        z_axis: int,
+        center_mode: Optional[str] = "center",
+        mask_select_fn: Callable = is_positive,
+        allow_missing_keys: bool = False,
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.mask_key = mask_key
+        self.cropper = SelectSlicesByMask(
+            z_axis=z_axis, center_mode=center_mode, mask_data=None, mask_select_fn=mask_select_fn
+        )
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        for key in self.key_iterator(d):
+            data = d[key]
+            mask = d[self.mask_key]
+            d[key] = self.cropper(data, mask)
+
+        return d
+
+
+class RandSelectSlicesFromImaged(Randomizable, MapTransform):
+    backend = RandSelectSlicesFromImage.backend
+
+    def __init__(
+        self, keys: KeysCollection, dim: int = 0, num_samples: int = 1, allow_missing_keys: bool = False
     ) -> None:
         MapTransform.__init__(self, keys, allow_missing_keys)
         self.dim = dim
@@ -451,3 +477,4 @@ GetMaxSlices3direcCropD = GetMaxSlices3direcCropDict = GetMaxSlices3direcCropd
 RandCropByPosNegLabelExD = RandCropByPosNegLabelExDict = RandCropByPosNegLabelExd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 RandSelectSlicesFromImageD = RandSelectSlicesFromImageDict = RandSelectSlicesFromImaged
+SelectSlicesByMaskD = SelectSlicesByMaskDict = SelectSlicesByMaskd
