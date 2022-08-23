@@ -19,7 +19,7 @@ from monai_ex.transforms.utility.array import (
     DataStatsEx,
     DataLabelling,
     RandLabelToMask,
-    RandSoftCopyPaste
+    RandSoftCopyPaste,
 )
 
 from monai_ex.transforms import (
@@ -37,9 +37,7 @@ class CastToTypeExd(MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
-        dtype: Union[
-            Sequence[Union[np.dtype, torch.dtype, str]], np.dtype, torch.dtype, str
-        ] = np.float32,
+        dtype: Union[Sequence[Union[np.dtype, torch.dtype, str]], np.dtype, torch.dtype, str] = np.float32,
     ) -> None:
         """
         Args:
@@ -78,9 +76,7 @@ class ToTensorExd(MapTransform):
         super().__init__(keys)
         self.converter = ToTensorEx()
 
-    def __call__(
-        self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]
-    ) -> Dict[Hashable, torch.Tensor]:
+    def __call__(self, data: Mapping[Hashable, Union[np.ndarray, torch.Tensor]]) -> Dict[Hashable, torch.Tensor]:
         d = dict(data)
         for key in self.keys:
             d[key] = self.converter(d[key])
@@ -116,19 +112,9 @@ class DataStatsExd(MapTransform):
         self.logger_handler = logger_handler
         self.printer = DataStatsEx(logger_handler=logger_handler)
 
-    def __call__(
-        self, data: Mapping[Hashable, NdarrayTensor]
-    ) -> Dict[Hashable, NdarrayTensor]:
+    def __call__(self, data: Mapping[Hashable, NdarrayTensor]) -> Dict[Hashable, NdarrayTensor]:
         d = dict(data)
-        for (
-            key,
-            prefix,
-            data_type,
-            data_shape,
-            value_range,
-            data_value,
-            additional_info,
-        ) in self.key_iterator(
+        for (key, prefix, data_type, data_shape, value_range, data_value, additional_info,) in self.key_iterator(
             d,
             self.prefix,
             self.data_type,
@@ -153,7 +139,7 @@ class DataStatsExd(MapTransform):
 class SplitChannelExd(MapTransform):
     """
     Extension of `monai.transforms.SplitChanneld`.
-    Extended: `output_names`: the names to construct keys to store split data if 
+    Extended: `output_names`: the names to construct keys to store split data if
               you don't want postfixes.
               `remove_origin`: delete original data of given keys
 
@@ -169,7 +155,7 @@ class SplitChannelExd(MapTransform):
         channel_dim: int = 0,
         remove_origin: bool = False,
         allow_missing_keys: bool = False,
-        meta_key_postfix='meta_dict',
+        meta_key_postfix="meta_dict",
     ) -> None:
         """
         Args:
@@ -209,6 +195,7 @@ class SplitChannelExd(MapTransform):
                 d.pop(f"{key}_{self.meta_key_postfix}")
         return d
 
+
 class DataLabellingd(MapTransform):
     def __init__(
         self,
@@ -217,14 +204,11 @@ class DataLabellingd(MapTransform):
         super().__init__(keys)
         self.converter = DataLabelling()
 
-    def __call__(
-        self, img: Mapping[Hashable, torch.Tensor]
-    ) -> Dict[Hashable, torch.Tensor]:
+    def __call__(self, img: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
         d = dict(img)
         for idx, key in enumerate(self.keys):
             d[key] = self.converter(d[key])
         return d
-
 
 
 class ConcatModalityd(MapTransform):
@@ -272,9 +256,7 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         self.n_layer = n_layer
 
         if pos < 0 or neg < 0:
-            raise ValueError(
-                f"pos and neg must be nonnegative, got pos={pos} neg={neg}."
-            )
+            raise ValueError(f"pos and neg must be nonnegative, got pos={pos} neg={neg}.")
         if pos + neg == 0:
             raise ValueError("Incompatible values: pos=0 and neg=0.")
         self.pos_ratio = pos / (pos + neg)
@@ -304,9 +286,7 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
         image: Optional[np.ndarray] = None,
     ) -> None:
         if fg_indices is None or bg_indices is None:
-            fg_indices_, bg_indices_ = map_binary_to_indices(
-                label, image, self.image_threshold
-            )
+            fg_indices_, bg_indices_ = map_binary_to_indices(label, image, self.image_threshold)
         else:
             fg_indices_ = fg_indices
             bg_indices_ = bg_indices
@@ -321,38 +301,24 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
             self.R,
         )
 
-    def __call__(
-        self, data: Mapping[Hashable, np.ndarray]
-    ) -> List[Dict[Hashable, np.ndarray]]:
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> List[Dict[Hashable, np.ndarray]]:
         d = dict(data)
         label = d[self.label_key]
         image = d[self.image_key] if self.image_key else None
-        fg_indices = (
-            d.get(self.fg_indices_key, None)
-            if self.fg_indices_key is not None
-            else None
-        )
-        bg_indices = (
-            d.get(self.bg_indices_key, None)
-            if self.bg_indices_key is not None
-            else None
-        )
+        fg_indices = d.get(self.fg_indices_key, None) if self.fg_indices_key is not None else None
+        bg_indices = d.get(self.bg_indices_key, None) if self.bg_indices_key is not None else None
 
         self.randomize(label, fg_indices, bg_indices, image)
         assert isinstance(self.spatial_size, tuple)
         assert self.centers is not None
-        results: List[Dict[Hashable, np.ndarray]] = [
-            dict() for _ in range(self.num_samples)
-        ]
+        results: List[Dict[Hashable, np.ndarray]] = [dict() for _ in range(self.num_samples)]
         for key in data.keys():
             if key in self.keys:
                 img = d[key]
                 for i, center in enumerate(self.centers):
                     if self.crop_mode in ["single", "parallel"]:
                         size_ = self.get_new_spatial_size()
-                        slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(
-                            img
-                        )
+                        slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(img)
 
                         seg_sum = slice_.squeeze().sum()
                         results[i][key] = np.moveaxis(slice_.squeeze(0), self.z_axis, 0)
@@ -360,9 +326,7 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
                         cross_slices = np.zeros(shape=(3,) + self.spatial_size)
                         for k in range(3):
                             size_ = np.insert(self.spatial_size, k, 1)
-                            slice_ = SpatialCrop(
-                                roi_center=tuple(center), roi_size=size_
-                            )(img)
+                            slice_ = SpatialCrop(roi_center=tuple(center), roi_size=size_)(img)
                             cross_slices[k] = slice_.squeeze()
                         results[i][key] = cross_slices
             else:
@@ -393,7 +357,7 @@ class RandLabelToMaskd(Randomizable, MapTransform):
         select_labels: Union[Sequence[int], int],
         merge_channels: bool = False,
         cls_label_key: Optional[KeysCollection] = None,
-        select_msk_label: Optional[int] = None, #! for tmp debug
+        select_msk_label: Optional[int] = None,  #! for tmp debug
     ) -> None:
         super().__init__(keys)
         self.select_labels = select_labels
@@ -411,14 +375,16 @@ class RandLabelToMaskd(Randomizable, MapTransform):
 
         if self.cls_label_key is not None:
             label = d[self.cls_label_key]
-            assert len(label) == len(self.select_labels), 'length of cls_label_key must equal to length of mask select_labels'
+            assert len(label) == len(
+                self.select_labels
+            ), "length of cls_label_key must equal to length of mask select_labels"
 
             if isinstance(label, (list, tuple)):
-                label = { i:L for i, L in enumerate(label, 1)}
+                label = {i: L for i, L in enumerate(label, 1)}
             elif isinstance(label, (int, float)):
-                label = {1:label}
-            assert isinstance(label, dict), 'Only support dict type label'
-            
+                label = {1: label}
+            assert isinstance(label, dict), "Only support dict type label"
+
             d[self.cls_label_key] = label[self.select_label]
 
         for key in self.keys:
@@ -435,6 +401,7 @@ class GetItemd(MapTransform):
         keys (KeysCollection): keys of the corresponding items to be transformed.
         index (Union[Sequence[int], int]): i-th item you want to select.
     """
+
     def __init__(  # pytype: disable=annotation-type-mismatch
         self,
         keys: KeysCollection,
@@ -454,62 +421,109 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
     """Dictionary-based wrapper of :py:class:`monai_ex.transforms.RandSoftCopyPaste`.
 
     Args:
-        keys (KeysCollection): keys of the corresponding items to be transformed
-        mask_key (Optional[str]): key of the mask data
-        source_dataset (Dataset): a dataset return source image and mask
-        k_erode (int): erosion times.
-        k_dilate (int): dilation times.
-        alpha (float, optional): alpha. Defaults to 0.8.
-        label_idx (Optional[int], optional): the label of souce mask to be proceed. Defaults to None.
+        keys (KeysCollection):  keys of the corresponding items to be transformed.
+        mask_key (Optional[str]): key of the mask data.
+        source_dataset (Dataset): a dataset for process source data, return dict data.
+        source_fg_key (str): key of source foreground data.
+        source_fg_value (Optional[int]): source foregound value.
+        k_erode (int): erosion iteration num.
+        k_dilate (int): dilation iteration num.
+        alpha (float, optional): transparence ratio. Defaults to 0.8.
+        prob (float, optional): Probability to perform this aug. Defaults to 0.1.
+        mask_select_fn (Callable, optional): function to select expected foreground, default is to select values > 0.
+        strict_paste (bool, optional): whether to strictly paste source mask inside of target mask region. Defaults to False.
+        tolerance (int, optional): even in strict_paste mode, there is a tolerance to allow paste to the edge. Defaults to 10.
+        log_name (Optional[str], optional): logger name. Defaults to None.
     """
+
     def __init__(
         self,
         keys: KeysCollection,
         mask_key: Optional[str],
         source_dataset: Dataset,
+        source_fg_key: str,
+        source_fg_value: Optional[int],
         k_erode: int,
         k_dilate: int,
         alpha: float = 0.8,
         prob: float = 0.1,
         mask_select_fn: Callable = is_positive,
-        source_label_value: Optional[int] = None,
+        strict_paste: bool = False,
+        tolerance: int = 100,
         log_name: Optional[str] = None,
     ) -> None:
         super().__init__(keys)
         self.mask_key = mask_key
         self.source_dataset = source_dataset
-        self.source_label_value = source_label_value
+        self.source_fg_value = source_fg_value
+        self.source_fg_key = source_fg_key
         self.generator = RandSoftCopyPaste(
             k_erode=k_erode,
             k_dilate=k_dilate,
             alpha=alpha,
             prob=prob,
             mask_select_fn=mask_select_fn,
-            source_label_value=source_label_value,
-            log_name=log_name
+            source_label_value=source_fg_value,
+            strict_paste=strict_paste,
+            tolerance=tolerance,
+            log_name=log_name,
         )
         self.logger = logging.getLogger(log_name)
 
     def randomize(self) -> None:
         return self.R.randint(len(self.source_dataset))
 
+    def compute_target_position(self, src_mask, softed_mask, target_image, target_mask):
+        self.generator.compute_target_position(src_mask, softed_mask, target_image, target_mask)
+
     def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
         d = dict(data)
         idx = self.randomize()
 
-        d = dict(data)
+        try:
+            source = self.source_dataset[idx]
+        except Exception as e:
+            raise TransformException("Source dataset crashed.\nErr msg: {e}")
+
+        if self.source_fg_key not in source:
+            raise TransformException(f"Source dataset did not contain foregound mask key: {self.source_fg_key}")
+
+        if self.generator.strict_paste and (
+            np.count_nonzero(self.generator.mask_select_fn(d[self.mask_key]))
+            < np.count_nonzero(source[self.source_fg_key])
+        ):
+            self.logger.debug("Target mask area is smaller than source foreground area. Skip copy&paste")
+            return d
+
+        softed_mask = self.generator.soften(source[self.source_fg_key])
+        if np.count_nonzero(softed_mask) == 0:
+            self.logger.debug("Source foreground area is too small to be soften. Skip copy&paste")
+            return d
+
+        softed_mask = softed_mask[np.newaxis, ...]
+
+        first_img_key = self.first_key(d)
+        if source[first_img_key].shape[0] > 1:
+            softed_mask = np.repeat(softed_mask, repeats=source_image.shape[0], axis=0)
+
+        self.compute_target_position(source[self.source_fg_key], softed_mask, d[first_img_key], d[self.mask_key])
+
         for key in self.key_iterator(d):
             image = d[key]
-            mask = d[self.mask_key] if self.mask_key else None
+            bg_mask = d[self.mask_key] if self.mask_key else None
+            source_image, source_fg = source[key], source[self.source_fg_key]
 
-            try:
-                source_image, source_mask = self.source_dataset[idx]
-            except ValueError as e:
-                raise TransformException("Source dataset should return a tuple: (source_image, source_mask).\nErr msg: {e}")
-            else:
-                sythetic_image, sythetic_mask = self.generator(image, mask, source_image, source_mask)
-                d[key] = sythetic_image
-                d[self.mask_key] = sythetic_mask
+            sythetic_image, sythetic_mask = self.generator(
+                image,
+                fg_mask=d.get(self.source_fg_key),
+                bg_mask=bg_mask,
+                source_image=source_image,
+                source_fg_mask=source_fg,
+                softed_fg_mask=softed_mask,
+                randomize=False,
+            )
+            d[key] = sythetic_image
+        d[self.source_fg_key] = sythetic_mask
         return d
 
 
