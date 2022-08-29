@@ -480,6 +480,15 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
 
 class SelectSlicesByMask(Transform):
     backend = SpatialCrop.backend
+    """Select slices based on mask data.
+
+    Args:
+        z_axis (int): the index of z axis (channel dim not counted)
+        slice_select_mode (Optional[str], optional): select slices by different mask calculation mode: "center", "maximum", "all". Defaults to "center".
+           if set to "all", all available masked slices will be selected.
+        mask_data (Optional[np.ndarray], optional): mask data. Defaults to None.
+        mask_select_fn (Callable): condition to get available mask region. Defaults to "is_positive",
+    """
 
     def __init__(
         self,
@@ -488,14 +497,6 @@ class SelectSlicesByMask(Transform):
         mask_data: Optional[np.ndarray] = None,
         mask_select_fn: Callable = is_positive,
     ) -> None:
-        """Select slices based on mask data.
-
-        Args:
-            roi_size (Union[Sequence[int], int]): the 2D spatial size of the crop region e.g. [224,224]
-            z_axis (int): the index of z axis (channel dim not counted)
-            slice_select_mode (Optional[str], optional): select slices by different mask calculation mode: "center", "maximum", "all". Defaults to "center".
-            mask_data (Optional[np.ndarray], optional): mask data. Defaults to None.
-        """
         super().__init__()
         self.z_axis = z_axis
         self.mask_data = mask_data
@@ -544,14 +545,14 @@ class SelectSlicesByMask(Transform):
 
 class RandSelectSlicesFromImage(Randomizable):
     backend = SpatialCrop.backend
+    """Randomly select one slice from 3D volume along given axis.
+
+    Args:
+        dim (int, optional): The axis to randomly select, ignoring the channel dim and must be postive. Defaults to 0.
+        num_samples (int, optional): The slice number selected once. Defaults to 1.
+    """
 
     def __init__(self, dim: int = 0, num_samples: int = 1) -> None:
-        """Randomly select one slice from 3D volume along given axis.
-
-        Args:
-            dim (int, optional): The axis to randomly select, ignoring the channel dim and must be postive. Defaults to 0.
-            num_samples (int, optional): The slice number selected once. Defaults to 1.
-        """
         self.dim = dim
         self.num_samples = num_samples
 

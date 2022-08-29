@@ -410,6 +410,7 @@ class RandCrop2dByPosNegLabeld(Randomizable, MapTransform):
 
 class SelectSlicesByMaskd(MapTransform):
     backend = SelectSlicesByMask.backend
+    """Dictionary-based version :py:class:`monai_ex.transforms.SelectSlicesByMask`."""
 
     def __init__(
         self,
