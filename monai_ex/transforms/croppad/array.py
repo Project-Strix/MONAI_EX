@@ -510,7 +510,10 @@ class SelectSlicesByMask(Transform):
             starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
             return list(range(starts[z_axis], ends[z_axis] + 1))
         elif self.slice_select_mode == "maximum":
-            raise NotImplementedError
+            axes = np.delete(np.arange(3), z_axis)
+            mask_data_ = mask_data.squeeze()
+            z_index = np.argmax(np.count_nonzero(mask_data_, axis=tuple(axes)))
+            return [z_index]
 
     def __call__(
         self,

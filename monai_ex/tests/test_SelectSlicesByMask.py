@@ -27,7 +27,7 @@ def test_selectslicesbymask():
     assert np.count_nonzero(img_slice) > 0
 
 
-@pytest.mark.parametrize("mode", ["center", "all"])
+@pytest.mark.parametrize("mode", ["center", "all", "maximum"])
 def test_selectslicesbymaskdict(mode):
     dim = 3
     spatial_size = (100,) * dim
@@ -48,7 +48,7 @@ def test_selectslicesbymaskdict(mode):
 
     img_slice = cropper(outputs)
 
-    if mode == "center":
+    if mode == "center" or mode == "maximum":
         assert img_slice[0]["image"].shape == (1, 100, 100)
         assert img_slice[0]["label"].shape == (1, 100, 100)
         assert np.count_nonzero(img_slice[0]["image"]) > 0
