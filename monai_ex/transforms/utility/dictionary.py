@@ -1,6 +1,6 @@
 import logging
 from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Union, List
-
+import copy
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -450,6 +450,7 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
         mask_select_fn: Callable = is_positive,
         strict_paste: bool = False,
         tolerance: int = 100,
+        shift_source_intensity: bool = False,
         log_name: Optional[str] = None,
     ) -> None:
         super().__init__(keys)
@@ -466,6 +467,7 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
             source_label_value=source_fg_value,
             strict_paste=strict_paste,
             tolerance=tolerance,
+            shift_source_intensity=shift_source_intensity,
             log_name=log_name,
         )
         self.logger = logging.getLogger(log_name)

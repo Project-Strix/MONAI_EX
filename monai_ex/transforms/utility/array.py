@@ -9,7 +9,7 @@ from monai.transforms.compose import Transform, Randomizable, RandomizableTransf
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.transforms.utils import generate_pos_neg_label_crop_centers, map_binary_to_indices, is_positive
 from monai.config import NdarrayTensor, DtypeLike
-from monai_ex.utils import convert_data_type_ex, bbox_ND
+from monai_ex.utils import convert_data_type_ex, bbox_ND, ensure_list
 
 
 class CastToTypeEx(CastToType):
@@ -169,7 +169,7 @@ class RandLabelToMask(Randomizable, Transform):
         select_labels: Union[Sequence[int], int],
         merge_channels: bool = False,
     ) -> None:  # pytype: disable=annotation-type-mismatch
-        self.select_labels = ensure_tuple(select_labels)
+        self.select_labels = ensure_list(select_labels)
         self.merge_channels = merge_channels
 
     def randomize(self):
@@ -208,7 +208,8 @@ class RandSoftCopyPaste(RandomizableTransform):
     Reference: `https://arxiv.org/ftp/arxiv/papers/2203/2203.10507.pdf`
 
     Args:
-        k_erode (int): erosion iteration num.
+        k_erode (int | float): erosion iteration num. 
+          Float value denotes the percentage from edge to center.
         k_dilate (int): dilation iteration num.
         alpha (float, optional): transparence ratio. Defaults to 0.8.
         prob (float, optional): Probability to perform this aug. Defaults to 0.1.
@@ -221,7 +222,7 @@ class RandSoftCopyPaste(RandomizableTransform):
 
     def __init__(
         self,
-        k_erode: int,
+        k_erode: Union[int, float],
         k_dilate: int,
         alpha: float = 0.8,
         prob: float = 0.1,
@@ -229,6 +230,7 @@ class RandSoftCopyPaste(RandomizableTransform):
         source_label_value: Optional[int] = None,
         strict_paste: bool = False,
         tolerance: int = 100,
+        shift_source_intensity: bool = False,
         log_name: Optional[str] = None,
     ) -> None:
         RandomizableTransform.__init__(self, prob)
@@ -239,6 +241,7 @@ class RandSoftCopyPaste(RandomizableTransform):
         self.source_label_value = source_label_value
         self.strict_paste = strict_paste
         self.tolerance = tolerance
+        self.shift_intensity = shift_source_intensity
         self.logger = logging.getLogger(log_name)
 
     def soften(self, src_mask):
@@ -253,8 +256,15 @@ class RandSoftCopyPaste(RandomizableTransform):
             else:
                 src_mask = (src_mask == self.source_label_value).squeeze(0)
 
+        def _minmax_norm(x):
+            minValue, maxValue = np.min(x), np.max(x)
+            return (x - minValue) / (maxValue - minValue)
+
         struct = ndi.generate_binary_structure(src_mask.ndim, src_mask.ndim - 1)
-        mask = ndi.binary_erosion(src_mask, struct, iterations=self.k_erode).astype(src_mask.dtype)
+        if 0 < self.k_erode < 1:
+            mask = _minmax_norm(ndi.distance_transform_edt(src_mask)) > self.k_erode
+        else:
+            mask = ndi.binary_erosion(src_mask, struct, iterations=self.k_erode).astype(src_mask.dtype)
         for j in range(self.k_dilate):
             mask_binary = np.where(mask > 0, 1, 0)
             mask_dilate = ndi.binary_dilation(mask_binary, struct, iterations=1).astype(mask.dtype)
@@ -307,7 +317,7 @@ class RandSoftCopyPaste(RandomizableTransform):
 
     def paste(
         self,
-        softed_image: NdarrayTensor,
+        source_image: NdarrayTensor,
         origin_mask: NdarrayTensor,
         softed_mask: NdarrayTensor,
         target_image: NdarrayTensor,
@@ -328,8 +338,20 @@ class RandSoftCopyPaste(RandomizableTransform):
 
         shifted_src_image = np.zeros_like(target_image)
         shifted_src_mask = np.zeros_like(target_image)
-        shifted_src_image[self.target_slices[0]] = softed_image[src_slices]
+
+        offset = 0
+        if self.shift_intensity:
+            src_mean_intensity = np.mean(source_image[src_slices])
+            tar_mean_intensity = np.mean(target_image[self.target_slices[0]])
+            offset = tar_mean_intensity - src_mean_intensity
+
+        # softed_image = source_image * softed_mask
+
+        src_region = source_image[src_slices] + offset
+        shifted_src_image[self.target_slices[0]] = src_region
         shifted_src_mask[self.target_slices[0]] = softed_mask[src_slices]
+        shifted_src_image *= shifted_src_mask
+        # shifted_src_image = np.clip(shifted_src_image, np.min(target_image), np.max(target_image))
         sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
         shifted_src_mask[self.target_slices[0]] = origin_mask[src_slices]
         return sythetic_image, shifted_src_mask
@@ -364,9 +386,8 @@ class RandSoftCopyPaste(RandomizableTransform):
             if source_image.shape[0] > 1:
                 softed_fg_mask = np.repeat(softed_fg_mask, repeats=source_image.shape[0], axis=0)
 
-        softed_image = source_image * softed_fg_mask
         processed_data = self.paste(
-            softed_image=softed_image,
+            source_image=source_image,
             origin_mask=source_fg_mask,
             softed_mask=softed_fg_mask,
             target_image=image,
@@ -382,7 +403,7 @@ class RandSoftCopyPaste(RandomizableTransform):
             shifted_src_mask[shifted_src_mask > 0] = self.source_label_value
             sythetic_mask = shifted_src_mask
         else:
-            fg_mask[shifted_src_mask > 0] = self.source_label_value
-            sythetic_mask = fg_mask
+            sythetic_mask = fg_mask.copy()
+            sythetic_mask[shifted_src_mask > 0] = self.source_label_value
 
         return sythetic_image, sythetic_mask
