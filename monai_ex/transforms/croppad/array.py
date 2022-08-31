@@ -580,9 +580,15 @@ class RandSelectSlicesFromImage(Randomizable):
 
 
 class SpatialCropByMask(Transform):
+    """Spatial crop images centered at the mask center.
+
+    Args:
+        roi_size (Union[Sequence[int], NdarrayOrTensor, None]): size of the crop ROI.
+        mask_select_fn (Callable, optional): function to select expected foreground, default is to select values > 0.
+    """
     def __init__(
         self,
-        roi_size: Union[Sequence[int], NdarrayOrTensor, None] = None,
+        roi_size: Union[Sequence[int], NdarrayOrTensor, None],
         mask_select_fn: Callable = is_positive
     ) -> None:
         self.roi_size = roi_size

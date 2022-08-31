@@ -481,6 +481,7 @@ class RandSelectSlicesFromImaged(Randomizable, MapTransform):
 
 
 class SpatialCropByMaskd(MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.SpatialCropByMask`."""
     def __init__(
         self,
         keys: KeysCollection,
