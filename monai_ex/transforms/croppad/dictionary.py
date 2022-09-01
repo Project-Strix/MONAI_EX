@@ -29,6 +29,7 @@ from monai_ex.transforms.croppad.array import (
     GetMaxSlices3direcCrop,
     RandSelectSlicesFromImage,
     SelectSlicesByMask,
+    SpatialCropByMask,
 )
 
 
@@ -479,6 +480,29 @@ class RandSelectSlicesFromImaged(Randomizable, MapTransform):
         return results
 
 
+class SpatialCropByMaskd(MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.SpatialCropByMask`."""
+    def __init__(
+        self,
+        keys: KeysCollection,
+        mask_key: str,
+        roi_size: Union[Sequence[int], NdarrayOrTensor, None] = None,
+        mask_select_fn: Callable = is_positive,
+        allow_missing_keys: bool = False
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.mask_key = mask_key
+        self.cropper = SpatialCropByMask(roi_size, mask_select_fn)
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+
+        for key in self.key_iterator(d):
+            d[key] = self.cropper(d[key], d[self.mask_key])
+
+        return d
+
+
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
 FullImage2DSliceCropD = FullImage2DSliceCropDict = FullImage2DSliceCropd
@@ -487,3 +511,4 @@ RandCropByPosNegLabelExD = RandCropByPosNegLabelExDict = RandCropByPosNegLabelEx
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 RandSelectSlicesFromImageD = RandSelectSlicesFromImageDict = RandSelectSlicesFromImaged
 SelectSlicesByMaskD = SelectSlicesByMaskDict = SelectSlicesByMaskd
+SpatialCropByMaskD = SpatialCropByMaskDict = SpatialCropByMaskd

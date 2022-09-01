@@ -577,3 +577,31 @@ class RandSelectSlicesFromImage(Randomizable):
                 else:
                     raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
         return results
+
+
+class SpatialCropByMask(Transform):
+    """Spatial crop images centered at the mask center.
+
+    Args:
+        roi_size (Union[Sequence[int], NdarrayOrTensor, None]): size of the crop ROI.
+        mask_select_fn (Callable, optional): function to select expected foreground, default is to select values > 0.
+    """
+    def __init__(
+        self,
+        roi_size: Union[Sequence[int], NdarrayOrTensor, None],
+        mask_select_fn: Callable = is_positive
+    ) -> None:
+        self.roi_size = roi_size
+        self.mask_select_fn = mask_select_fn
+
+    def __call__(self, img: NdarrayOrTensor, msk: Optional[NdarrayOrTensor]) -> NdarrayOrTensor:
+        cropped_data = []
+        if msk is None:
+            msk = img
+
+        for channel in range(img.shape[0]):
+            start_, end_ = generate_spatial_bounding_box(msk, select_fn=self.mask_select_fn, channel_indices=channel)
+            cropped = SpatialCrop(roi_center=np.add(start_, end_) // 2, roi_size=self.roi_size)(img)
+            cropped_data.append(cropped)
+
+        return np.concatenate(cropped_data, axis=0)
