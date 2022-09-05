@@ -491,7 +491,7 @@ class Extract3DImageToSlices(Transform):
         self.z_axis = z_axis
 
     def get_slice_indices(self, img: NdarrayOrTensor):
-        return list(range(0, img[1:].shape[self.z_axis]))
+        return list(range(0, img.shape[self.z_axis + 1]))
 
     def __call__(self, img: NdarrayOrTensor, slice_indices: Optional[List] = None):
         if slice_indices is None:
