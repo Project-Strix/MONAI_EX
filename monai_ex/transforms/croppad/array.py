@@ -483,24 +483,24 @@ class Extract3DImageToSlices(Transform):
     """Extract 3D image to slices along given axis.
 
     Args:
-        z_axis (int): the index of z axis to extract slices.
+        axis (int): the index of axis to extract slices.
     """
 
-    def __init__(self, z_axis: int) -> None:
+    def __init__(self, axis: int) -> None:
         super().__init__()
-        self.z_axis = z_axis
+        self.axis = axis
 
     def get_slice_indices(self, img: NdarrayOrTensor):
-        return list(range(0, img.shape[self.z_axis + 1]))
+        return list(range(0, img.shape[self.axis + 1]))
 
     def __call__(self, img: NdarrayOrTensor, slice_indices: Optional[List] = None):
         if slice_indices is None:
             slice_indices = self.get_slice_indices(img)
 
         if isinstance(img, np.ndarray):
-            return [np.take(img, slice_idx, axis=self.z_axis + 1) for slice_idx in slice_indices]
+            return [np.take(img, slice_idx, axis=self.axis + 1) for slice_idx in slice_indices]
         elif isinstance(img, torch.Tensor):
-            return [torch.index_select(img, dim=self.z_axis + 1, index=torch.tensor(slice_idx)).squeeze(self.z_axis + 1) for slice_idx in slice_indices]
+            return [torch.index_select(img, dim=self.axis + 1, index=torch.tensor(slice_idx)).squeeze(self.axis + 1) for slice_idx in slice_indices]
         else:
             raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
 
@@ -510,7 +510,7 @@ class SelectSlicesByMask(Extract3DImageToSlices):
     """Select specific slices from 3D image based on mask data.
 
     Args:
-        z_axis (int): the index of z axis (channel dim not counted)
+        axis (int): the index of z axis (channel dim not counted)
         slice_select_mode (Optional[str], optional): select slices by different mask calculation mode: "center", "maximum", "all". Defaults to "center".
            if set to "all", all available masked slices will be selected.
         mask_data (Optional[np.ndarray], optional): mask data. Defaults to None.
@@ -519,25 +519,25 @@ class SelectSlicesByMask(Extract3DImageToSlices):
 
     def __init__(
         self,
-        z_axis: int,
+        axis: int,
         slice_select_mode: Optional[str] = "center",
         mask_data: Optional[np.ndarray] = None,
         mask_select_fn: Callable = is_positive,
     ) -> None:
-        super().__init__(z_axis=z_axis)
+        super().__init__(axis=axis)
         self.mask_data = mask_data
         self.mask_select_fn = mask_select_fn
         self.slice_select_mode = slice_select_mode
 
-    def get_slice_indices(self, mask_data, z_axis):
+    def get_slice_indices(self, mask_data, axis):
         if self.slice_select_mode == "center":
             starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
-            return [(starts[self.z_axis] + ends[self.z_axis]) // 2]
+            return [(starts[axis] + ends[axis]) // 2]
         elif self.slice_select_mode == "all":
             starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
-            return list(range(starts[z_axis], ends[z_axis] + 1))
+            return list(range(starts[axis], ends[axis] + 1))
         elif self.slice_select_mode == "maximum":
-            axes = np.delete(np.arange(3), z_axis)
+            axes = np.delete(np.arange(3), axis)
             mask_data_ = mask_data.squeeze()
             z_index = np.argmax(np.count_nonzero(mask_data_, axis=tuple(axes)))
             return [z_index]
@@ -559,7 +559,7 @@ class SelectSlicesByMask(Extract3DImageToSlices):
                 f"got img={img.shape[0]} mask_data={mask_data_.shape[0]}."
             )
 
-        slice_indices = self.get_slice_indices(mask_data_, self.z_axis)
+        slice_indices = self.get_slice_indices(mask_data_, self.axis)
 
         return super().__call__(img, slice_indices)
 

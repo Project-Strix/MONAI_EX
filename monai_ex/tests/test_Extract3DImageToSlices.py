@@ -20,7 +20,7 @@ def test_selectslicesbymask():
     )
 
     image, label = generator(None)
-    cropper = Extract3DImageToSlices(z_axis=2)
+    cropper = Extract3DImageToSlices(axis=2)
     img_slice = cropper(image)[0]
 
     assert img_slice.shape == (1, 100, 100)
@@ -42,10 +42,11 @@ def test_selectslicesbymaskdict():
     )
 
     outputs = generator({"image": "1", "label": "1"})
-    cropper = Extract3DImageToSlicesd(keys=["image", "label"], z_axis=2)
+    cropper = Extract3DImageToSlicesd(keys=["image", "label"], axis=2)
 
     img_slice = cropper(outputs)
 
     assert len(img_slice) == 100
     assert img_slice[1]["image"].shape == (1, 100, 100)
     assert img_slice[1]["label"].shape == (1, 100, 100)
+    assert "image_meta_dict" in img_slice[0] and isinstance(img_slice[0]["image_meta_dict"], dict)

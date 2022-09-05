@@ -1,4 +1,5 @@
 from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, List, Callable
+from pathlib import Path
 
 import torch
 import numpy as np
@@ -15,7 +16,7 @@ from monai.transforms import (
     SpatialCrop,
     ResizeWithPadOrCrop,
 )
-from monai.utils import fall_back_tuple
+from monai.utils import fall_back_tuple, ensure_tuple
 
 from monai_ex.utils import ImageMetaKey as Key
 from monai_ex.utils import (
@@ -418,16 +419,31 @@ class SelectSlicesByMaskd(MapTransform):
         self,
         keys: KeysCollection,
         mask_key: str,
-        z_axis: int,
+        axis: int,
         slice_select_mode: Optional[str] = "center",
         mask_select_fn: Callable = is_positive,
+        meta_key_postfix: str = "meta_dict",
+        add_meta_info: bool = True,
         allow_missing_keys: bool = False,
     ) -> None:
         super().__init__(keys, allow_missing_keys)
         self.mask_key = mask_key
+        self.meta_key_postfix = meta_key_postfix
+        self.add_meta_info = add_meta_info
         self.cropper = SelectSlicesByMask(
-            z_axis=z_axis, slice_select_mode=slice_select_mode, mask_data=None, mask_select_fn=mask_select_fn
+            axis=axis, slice_select_mode=slice_select_mode, mask_data=None, mask_select_fn=mask_select_fn
         )
+
+    def add_meta_dict(self, item, data, key, slice_idx=0):
+        meta_key = f"{key}_{self.meta_key_postfix}"
+        if meta_key not in item:
+            if self.add_meta_info:
+                meta_info = data[meta_key].copy()
+                file_path = Path(meta_info["filename_or_obj"])
+                meta_info["filename_or_obj"] = str(file_path.parent / file_path.stem / f"slice_{slice_idx}")
+                item[meta_key] = meta_info
+            else:
+                item[meta_key] = {}
 
     def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
         d = dict(data)
@@ -440,9 +456,11 @@ class SelectSlicesByMaskd(MapTransform):
             if ret:  # support dynamic slice num
                 for i, selected_slice in enumerate(selected_slices):
                     ret[i][key] = selected_slice
+                    self.add_meta_dict(ret[i], d, key, i)
             else:
-                for selected_slice in selected_slices:
+                for i, selected_slice in enumerate(selected_slices):
                     ret.append({key: selected_slice})
+                    self.add_meta_dict(ret[-1], d, key, i)
 
         return ret
 
@@ -511,11 +529,26 @@ class Extract3DImageToSlicesd(MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
-        z_axis: int,
+        axis: int,
+        meta_key_postfix: str = "meta_dict",
+        add_meta_info: bool = True,
         allow_missing_keys: bool = False
     ) -> None:
         super().__init__(keys, allow_missing_keys)
-        self.cropper = Extract3DImageToSlices(z_axis)
+        self.meta_key_postfix = meta_key_postfix
+        self.add_meta_info = add_meta_info
+        self.cropper = Extract3DImageToSlices(axis)
+
+    def add_meta_dict(self, item, data, key, slice_idx):
+        meta_key = f"{key}_{self.meta_key_postfix}"
+        if meta_key not in item:
+            if self.add_meta_info:
+                meta_info = data[meta_key].copy()
+                file_path = Path(meta_info["filename_or_obj"])
+                meta_info["filename_or_obj"] = str(file_path.parent / file_path.stem / f"slice_{slice_idx}")
+                item[meta_key] = meta_info
+            else:
+                item[meta_key] = {}
 
     def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
         d = dict(data)
@@ -526,9 +559,12 @@ class Extract3DImageToSlicesd(MapTransform):
             if ret:
                 for i, selected_slice in enumerate(selected_slices):
                     ret[i][key] = selected_slice
+                    self.add_meta_dict(ret[i], d, key, i)
             else:
-                for selected_slice in selected_slices:
+                for i, selected_slice in enumerate(selected_slices):
                     ret.append({key: selected_slice})
+                    self.add_meta_dict(ret[-1], d, key, i)
+
         return ret
 
 
