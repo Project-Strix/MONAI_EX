@@ -480,6 +480,11 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
 
 class Extract3DImageToSlices(Transform):
     backend: SpatialCrop.backend
+    """Extract 3D image to slices along given axis.
+
+    Args:
+        z_axis (int): the index of z axis to extract slices.
+    """
 
     def __init__(self, z_axis: int) -> None:
         super().__init__()
