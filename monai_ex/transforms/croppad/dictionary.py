@@ -30,6 +30,7 @@ from monai_ex.transforms.croppad.array import (
     RandSelectSlicesFromImage,
     SelectSlicesByMask,
     SpatialCropByMask,
+    Extract3DImageToSlices,
 )
 
 
@@ -482,13 +483,14 @@ class RandSelectSlicesFromImaged(Randomizable, MapTransform):
 
 class SpatialCropByMaskd(MapTransform):
     """Dictionary-based version :py:class:`monai_ex.transforms.SpatialCropByMask`."""
+
     def __init__(
         self,
         keys: KeysCollection,
         mask_key: str,
         roi_size: Union[Sequence[int], NdarrayOrTensor, None] = None,
         mask_select_fn: Callable = is_positive,
-        allow_missing_keys: bool = False
+        allow_missing_keys: bool = False,
     ) -> None:
         super().__init__(keys, allow_missing_keys)
         self.mask_key = mask_key
@@ -503,6 +505,33 @@ class SpatialCropByMaskd(MapTransform):
         return d
 
 
+class Extract3DImageToSlicesd(MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.Extract3DImageToSlices`."""
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        z_axis: int,
+        allow_missing_keys: bool = False
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.cropper = Extract3DImageToSlices(z_axis)
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+
+        ret = []
+        for key in self.key_iterator(d):
+            selected_slices = self.cropper(d[key])
+            if ret:
+                for i, selected_slice in enumerate(selected_slices):
+                    ret[i][key] = selected_slice
+            else:
+                for selected_slice in selected_slices:
+                    ret.append({key: selected_slice})
+        return ret
+
+
 CenterMask2DSliceCropD = CenterMask2DSliceCropDict = CenterMask2DSliceCropd
 FullMask2DSliceCropD = FullMask2DSliceCropDict = FullMask2DSliceCropd
 FullImage2DSliceCropD = FullImage2DSliceCropDict = FullImage2DSliceCropd
@@ -512,3 +541,4 @@ RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabel
 RandSelectSlicesFromImageD = RandSelectSlicesFromImageDict = RandSelectSlicesFromImaged
 SelectSlicesByMaskD = SelectSlicesByMaskDict = SelectSlicesByMaskd
 SpatialCropByMaskD = SpatialCropByMaskDict = SpatialCropByMaskd
+Extract3DImageToSlicesD = Extract3DImageToSlicesDict = Extract3DImageToSlicesd

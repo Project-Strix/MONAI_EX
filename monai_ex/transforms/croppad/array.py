@@ -478,9 +478,31 @@ class RandCropByPosNegLabelEx(RandCropByPosNegLabel):
         return results
 
 
-class SelectSlicesByMask(Transform):
+class Extract3DImageToSlices(Transform):
+    backend: SpatialCrop.backend
+
+    def __init__(self, z_axis: int) -> None:
+        super().__init__()
+        self.z_axis = z_axis
+
+    def get_slice_indices(self, img: NdarrayOrTensor):
+        return list(range(0, img[1:].shape[self.z_axis]))
+
+    def __call__(self, img: NdarrayOrTensor, slice_indices: Optional[List] = None):
+        if slice_indices is None:
+            slice_indices = self.get_slice_indices(img)
+
+        if isinstance(img, np.ndarray):
+            return [np.take(img, slice_idx, axis=self.z_axis + 1) for slice_idx in slice_indices]
+        elif isinstance(img, torch.Tensor):
+            return [torch.index_select(img, dim=self.z_axis + 1, index=torch.tensor(slice_idx)).squeeze(self.z_axis + 1) for slice_idx in slice_indices]
+        else:
+            raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
+
+
+class SelectSlicesByMask(Extract3DImageToSlices):
     backend = SpatialCrop.backend
-    """Select slices based on mask data.
+    """Select specific slices from 3D image based on mask data.
 
     Args:
         z_axis (int): the index of z axis (channel dim not counted)
@@ -497,8 +519,7 @@ class SelectSlicesByMask(Transform):
         mask_data: Optional[np.ndarray] = None,
         mask_select_fn: Callable = is_positive,
     ) -> None:
-        super().__init__()
-        self.z_axis = z_axis
+        super().__init__(z_axis=z_axis)
         self.mask_data = mask_data
         self.mask_select_fn = mask_select_fn
         self.slice_select_mode = slice_select_mode
@@ -518,7 +539,7 @@ class SelectSlicesByMask(Transform):
 
     def __call__(
         self,
-        img: np.ndarray,
+        img: NdarrayOrTensor,
         msk: Optional[np.ndarray] = None,
     ) -> Any:
         if self.mask_data is None and msk is None:
@@ -535,12 +556,7 @@ class SelectSlicesByMask(Transform):
 
         slice_indices = self.get_slice_indices(mask_data_, self.z_axis)
 
-        if isinstance(img, np.ndarray):
-            return [np.take(img, slice_idx, axis=self.z_axis + 1) for slice_idx in slice_indices]
-        elif isinstance(img, torch.Tensor):
-            return [torch.index_select(img, dim=self.z_axis + 1, index=torch.tensor(slice_idx)).squeeze(self.z_axis + 1) for slice_idx in slice_indices]
-        else:
-            raise NotImplementedError(f"Only support np.array and torch.Tensor, but got {type(img)}")
+        return super().__call__(img, slice_indices)
 
 
 class RandSelectSlicesFromImage(Randomizable):
