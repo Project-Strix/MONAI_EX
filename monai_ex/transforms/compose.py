@@ -53,8 +53,6 @@ class RandomSelect(Randomizable):
         return apply_transform(self.selected_trans, input_)
 
 
-ReturnType = TypeVar("ReturnType")
-
 def _apply_transform(
     transform: Callable[..., ReturnType], parameters: Any, unpack_parameters: bool = False
 ) -> ReturnType:
