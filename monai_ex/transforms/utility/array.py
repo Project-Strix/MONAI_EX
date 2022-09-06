@@ -206,6 +206,17 @@ class RandSoftCopyPaste(RandomizableTransform):
     """
     Perform Soft Copy&Paste augmentation.
     Reference: `https://arxiv.org/ftp/arxiv/papers/2203/2203.10507.pdf`
+
+    Args:
+        k_erode (int): erosion iteration num.
+        k_dilate (int): dilation iteration num.
+        alpha (float, optional): transparence ratio. Defaults to 0.8.
+        prob (float, optional): Probability to perform this aug. Defaults to 0.1.
+        mask_select_fn (Callable, optional): function to select expected foreground, default is to select values > 0.
+        source_label_value (Optional[int], optional): source foregound value. Defaults to None.
+        strict_paste (bool, optional): whether to strictly paste source mask inside of target mask region. Defaults to False.
+        tolerance (int, optional): even in strict_paste mode, there is a tolerance to allow paste to the edge. Defaults to 10.
+        log_name (Optional[str], optional): logger name. Defaults to None.
     """
 
     def __init__(
@@ -216,6 +227,8 @@ class RandSoftCopyPaste(RandomizableTransform):
         prob: float = 0.1,
         mask_select_fn: Callable = is_positive,
         source_label_value: Optional[int] = None,
+        strict_paste: bool = False,
+        tolerance: int = 100,
         log_name: Optional[str] = None,
     ) -> None:
         RandomizableTransform.__init__(self, prob)
@@ -224,10 +237,23 @@ class RandSoftCopyPaste(RandomizableTransform):
         self.alpha = alpha
         self.mask_select_fn = mask_select_fn
         self.source_label_value = source_label_value
+        self.strict_paste = strict_paste
+        self.tolerance = tolerance
         self.logger = logging.getLogger(log_name)
 
     def soften(self, src_mask):
-        struct = ndi.generate_binary_structure(src_mask.ndim, 2)
+        if src_mask.shape[0] > 1:
+            if self.source_label_value is None:
+                raise ValueError("Multi-channel label data need to specify label_idx")
+            else:
+                src_mask = src_mask[self.source_label_value, ...]
+        elif src_mask.shape[0] == 1:
+            if self.source_label_value is None:
+                src_mask = (src_mask > 0).squeeze(0)
+            else:
+                src_mask = (src_mask == self.source_label_value).squeeze(0)
+
+        struct = ndi.generate_binary_structure(src_mask.ndim, src_mask.ndim - 1)
         mask = ndi.binary_erosion(src_mask, struct, iterations=self.k_erode).astype(src_mask.dtype)
         for j in range(self.k_dilate):
             mask_binary = np.where(mask > 0, 1, 0)
@@ -237,87 +263,126 @@ class RandSoftCopyPaste(RandomizableTransform):
 
         return mask
 
+    def ensure_strict_center(self, softed_mask, target_mask):
+        src_ranges = tuple(
+            slice(self.boundingbox[2 * i], self.boundingbox[2 * i + 1]) for i in range(len(self.boundingbox) // 2)
+        )
+        src_slices = (slice(softed_mask.shape[0]), *src_ranges)
+        shifted_src_mask = np.zeros_like(target_mask)
+        for tar_slice in self.target_slices:
+            shifted_src_mask[tar_slice] = softed_mask[src_slices]
+            if np.count_nonzero(target_mask[shifted_src_mask] == 0) <= self.tolerance:  # full contain!
+                return [tar_slice]  # only support sample num = 1
+        return []
+
+    def compute_target_position(self, src_mask, softed_mask, target_image, target_mask) -> None:
+        n_ch = target_image.shape[0]
+        self.boundingbox = bbox_ND(softed_mask[0, ...])
+        bbox_size = tuple(
+            self.boundingbox[2 * i + 1] - self.boundingbox[2 * i] for i in range(len(self.boundingbox) // 2)
+        )
+        selected_target_mask = self.mask_select_fn(target_mask)
+        fg_indices_, bg_indices_ = map_binary_to_indices(selected_target_mask, None, None)
+        centers = generate_pos_neg_label_crop_centers(
+            bbox_size,
+            10,  # pick 10 candidates
+            1,
+            softed_mask.shape[1:],
+            fg_indices_,
+            bg_indices_,
+            self.R,
+            False,
+        )
+        target_ranges = []
+        for center in centers:
+            target_ranges.append(
+                tuple(slice(int(center - sz // 2), int(center - sz // 2 + sz)) for center, sz in zip(center, bbox_size))
+            )
+        self.target_slices = [(slice(n_ch), *ranges) for ranges in target_ranges]
+        if self.strict_paste:
+            self.logger.debug("Enter strict filtering mode.")
+            self.target_slices = self.ensure_strict_center(
+                src_mask, selected_target_mask
+            )
+
     def paste(
         self,
         softed_image: NdarrayTensor,
         origin_mask: NdarrayTensor,
         softed_mask: NdarrayTensor,
         target_image: NdarrayTensor,
-        target_mask: NdarrayTensor,
+        target_bg_mask: NdarrayTensor,
+        randomize: True,
     ):
         n_ch = target_image.shape[0]
-        boundingbox = bbox_ND(softed_mask[0, ...])
-        bbox_size = tuple(boundingbox[2 * i + 1] - boundingbox[2 * i] for i in range(len(boundingbox) // 2))
-        src_ranges = tuple(slice(boundingbox[2 * i], boundingbox[2 * i + 1]) for i in range(len(boundingbox) // 2))
+        if randomize:
+            self.compute_target_position(origin_mask, softed_mask, target_image, target_bg_mask)
+        src_ranges = tuple(
+            slice(self.boundingbox[2 * i], self.boundingbox[2 * i + 1]) for i in range(len(self.boundingbox) // 2)
+        )
         src_slices = (slice(n_ch), *src_ranges)
 
-        if target_mask is None:
-            # ! if no target mask is provided, paste to orignal pos.
-            tar_slices = src_slices
-        else:
-            fg_indices_, bg_indices_ = map_binary_to_indices(self.mask_select_fn(target_mask), None, None)
-            centers = generate_pos_neg_label_crop_centers(
-                bbox_size,
-                1,
-                1,
-                softed_mask.shape[1:],
-                fg_indices_,
-                bg_indices_,
-                self.R,
-                False,
-            )
-            tar_ranges = tuple(slice(int(center - sz // 2), int(center - sz // 2 + sz)) for center, sz in zip(centers[0], bbox_size))
-            tar_slices = (slice(n_ch), *tar_ranges)
+        if not self.target_slices:
+            self.logger.debug("No position is found to paste strictly! Skip copy&paste")
+            return None
 
         shifted_src_image = np.zeros_like(target_image)
         shifted_src_mask = np.zeros_like(target_image)
-        shifted_src_image[tar_slices] = softed_image[src_slices]
-        shifted_src_mask[tar_slices] = softed_mask[src_slices]
+        shifted_src_image[self.target_slices[0]] = softed_image[src_slices]
+        shifted_src_mask[self.target_slices[0]] = softed_mask[src_slices]
         sythetic_image = shifted_src_image + (1 - shifted_src_mask) * target_image
-        shifted_src_mask[tar_slices] = origin_mask[src_slices]
+        shifted_src_mask[self.target_slices[0]] = origin_mask[src_slices]
         return sythetic_image, shifted_src_mask
 
     def __call__(
         self,
         image: NdarrayTensor,
-        mask: Optional[NdarrayTensor],
+        fg_mask: Optional[NdarrayTensor],
+        bg_mask: NdarrayTensor,
         source_image: NdarrayTensor,
-        source_mask: NdarrayTensor,
+        source_fg_mask: NdarrayTensor,
+        softed_fg_mask: Optional[NdarrayTensor] = None,
+        randomize: bool = True,
     ) -> NdarrayTensor:
-        self.randomize(None)
+        if randomize:
+            self.randomize(None)
+
         if not self._do_transform:
-            return image, mask
+            return image, fg_mask
 
-        if source_mask.shape[0] > 1:
-            if self.source_label_value is None:
-                raise ValueError("Multi-channel label data need to specify label_idx")
-            else:
-                source_mask = source_mask[self.source_label_value, ...]
-        elif source_mask.shape[0] == 1:
-            if self.source_label_value is None:
-                source_mask = (source_mask > 0).squeeze(0)
-            else:
-                source_mask = (source_mask == self.source_label_value).squeeze(0)
+        if self.strict_paste and np.count_nonzero(self.mask_select_fn(bg_mask)) < np.count_nonzero(source_fg_mask):
+            self.logger.debug("Target mask area is smaller than source foreground area. Skip copy&paste")
+            return image, fg_mask
 
-        softed_mask = self.soften(source_mask)
-        softed_mask = softed_mask[np.newaxis, ...]
-        if source_image.shape[0] > 1:
-            softed_mask = np.repeat(softed_mask, repeats=source_image.shape[0], axis=0)
+        if softed_fg_mask is None:
+            softed_fg_mask = self.soften(source_fg_mask)
+            if np.count_nonzero(softed_fg_mask) == 0:
+                self.logger.debug("Source foreground area is too small to be soften. Skip copy&paste")
+                return image, fg_mask
 
-        softed_image = source_image * softed_mask
-        sythetic_image, shifted_src_mask = self.paste(
+            softed_fg_mask = softed_fg_mask[np.newaxis, ...]
+            if source_image.shape[0] > 1:
+                softed_fg_mask = np.repeat(softed_fg_mask, repeats=source_image.shape[0], axis=0)
+
+        softed_image = source_image * softed_fg_mask
+        processed_data = self.paste(
             softed_image=softed_image,
-            origin_mask=source_mask[None],
-            softed_mask=softed_mask,
+            origin_mask=source_fg_mask,
+            softed_mask=softed_fg_mask,
             target_image=image,
-            target_mask=mask
+            target_bg_mask=bg_mask,
+            randomize=randomize,
         )
+        if processed_data is None:
+            return image, fg_mask
 
-        if mask is None:
+        sythetic_image, shifted_src_mask = processed_data
+
+        if fg_mask is None:
             shifted_src_mask[shifted_src_mask > 0] = self.source_label_value
             sythetic_mask = shifted_src_mask
         else:
-            mask[shifted_src_mask > 0] = self.source_label_value
-            sythetic_mask = mask
+            fg_mask[shifted_src_mask > 0] = self.source_label_value
+            sythetic_mask = fg_mask
 
         return sythetic_image, sythetic_mask
