@@ -12,14 +12,14 @@ from monai_ex.transforms import GenerateSyntheticData, Compose, adaptor
 
 @pytest.mark.parametrize("dim", [2, 3])
 def test_randsoftcopypaste(dim):
-    data_num = 3
+    data_num = 2
     spatial_size = (100,) * dim
     generator = GenerateSyntheticData(
         *spatial_size,
         num_objs=1,
         rad_max=5,
         rad_min=4,
-        noise_max=0,
+        noise_max=0.5,
         num_seg_classes=1,
         channel_dim=0,
     )
@@ -48,7 +48,10 @@ def test_randsoftcopypaste(dim):
 
     for i, item in enumerate(dataset):
         image, label = item["image"], item["label"]
-        assert np.count_nonzero(image) == 2 * volume_size
 
-        save_fpath = Path.home() / f"sythetic_img_{i}.nii.gz"
-        nib.save(nib.Nifti1Image(image.squeeze(), np.eye(4)), save_fpath)
+        # save_fpath = Path.home() / f"sythetic_{dim}Dimg_{i}.nii.gz"
+        # nib.save(nib.Nifti1Image(image.squeeze(), np.eye(4)), save_fpath)
+        # save_fpath = Path.home() / f"sythetic_{dim}Dlabel_{i}.nii.gz"
+        # nib.save(nib.Nifti1Image(label.squeeze(), np.eye(4)), save_fpath)
+
+        assert volume_size < np.count_nonzero(label) <= 2 * volume_size
