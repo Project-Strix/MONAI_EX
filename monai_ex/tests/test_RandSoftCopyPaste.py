@@ -27,11 +27,11 @@ def test_randsoftcopypaste(dim):
 
     print("dummy data, mask shape:", src_image.shape, src_image.shape)
     print("mask label: ", np.unique(src_mask))
-    sythetic_img = RandSoftCopyPaste(2, 4, label_idx=1)(src_image, src_mask, tar_image, tar_mask == 0)
+    sythetic_img = RandSoftCopyPaste(2, 4, source_label_value=1)(src_image, src_mask, tar_image, tar_mask == 0)
     assert sythetic_img.shape == (1, *spatial_size)
 
     # save_fpath = Path.home() / f"sythetic_img_{dim}.nii.gz"
     # nib.save(nib.Nifti1Image(sythetic_img.squeeze(), np.eye(4)), save_fpath)
 
-    sythetic_img = RandSoftCopyPaste(2, 4, label_idx=1)(src_image, src_mask, tar_image, None)
+    sythetic_img = RandSoftCopyPaste(2, 4, source_label_value=1)(src_image, src_mask, tar_image, None)
     assert sythetic_img.shape == (1, *spatial_size)
