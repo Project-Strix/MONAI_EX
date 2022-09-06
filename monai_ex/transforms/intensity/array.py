@@ -9,7 +9,7 @@ import numpy as np
 from scipy.special import comb
 from scipy.ndimage import median_filter
 
-from monai.transforms.compose import Randomizable, Transform
+from monai.transforms.compose import Randomizable, Transform, RandomizableTransform
 from monai.transforms.intensity.array import NormalizeIntensity, ScaleIntensity
 from monai_ex.utils import optional_import
 
@@ -261,18 +261,21 @@ class RandImageOutpainting(Randomizable, Transform):
         return x
 
 
-class RandNonlinear(Randomizable, Transform):
+class RandNonlinear(RandomizableTransform):
     def __init__(self, prob: float = 0.5):
         self.prob = prob
 
     def randomize(self, data: Optional[Any] = None) -> None:
-        self._do_transform = self.R.random() < self.prob
+        super().randomize(None)
+        if not self._do_transform:
+            return None
         self.points = [
             [0, 0],
             [self.R.random(), self.R.random()],
             [self.R.random(), self.R.random()],
             [1, 1],
         ]
+        self.flip = self.R.random() < 0.5
 
     def bernstein_poly(self, i, n, t):
         """
@@ -306,16 +309,15 @@ class RandNonlinear(Randomizable, Transform):
 
         return xvals, yvals
 
-    def __call__(self, image):
-        self.randomize(image)
+    def __call__(self, image, randomize: bool = True):
+        if randomize:
+            self.randomize()
+        
         if not self._do_transform:
             return image
 
-        xpoints = [p[0] for p in self.points]
-        ypoints = [p[1] for p in self.points]
         xvals, yvals = self.bezier_curve(self.points, nTimes=10000)
-        if self.R.random() < 0.5:
-            # Half change to get flip
+        if self.flip:  # Half change to get flip
             xvals = np.sort(xvals)
         else:
             xvals, yvals = np.sort(xvals), np.sort(yvals)

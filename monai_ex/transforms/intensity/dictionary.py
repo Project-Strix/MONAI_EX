@@ -5,14 +5,15 @@ defined in :py:class:`monai.transforms.intensity.array`.
 Class names are ended with 'd' to denote dictionary-based transforms.
 """
 import torch
-from typing import Dict, Hashable, Mapping, Optional
+from typing import Dict, Hashable, Mapping, Optional, Any
 
 import numpy as np
 
 from monai.config import KeysCollection
-from monai.transforms.compose import MapTransform, Randomizable
+from monai.config.type_definitions import NdarrayOrTensor
+from monai.transforms.compose import MapTransform, Randomizable, RandomizableTransform
 from monai.transforms.intensity.array import ScaleIntensityRange, MaskIntensity
-from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe, ClipNorm, ToGrayscale
+from monai_ex.transforms.intensity.array import ClipIntensity, MedianFilter, Clahe, ClipNorm, ToGrayscale, RandNonlinear
 
 
 class ScaleIntensityByDicomInfod(MapTransform):
@@ -144,10 +145,29 @@ class RandImageOutpaintingd(MapTransform, Randomizable):
         raise NotImplementedError
 
 
-class RandNonlineard(MapTransform, Randomizable):
-    def __init__(self, keys: KeysCollection):
-        raise NotImplementedError
+class RandNonlineard(MapTransform, RandomizableTransform):
+    def __init__(self, keys: KeysCollection, prob: float, allow_missing_keys: bool = False):
+        MapTransform.__init__(self, keys, allow_missing_keys)
+        RandomizableTransform.__init__(self, prob)
+        self.converter = RandNonlinear(prob=1.0)
 
+    def set_random_state(self, seed: Optional[int] = None, state: Optional[np.random.RandomState] = None) -> "Randomizable":
+        super().set_random_state(seed, state)
+        self.converter.set_random_state(seed, state)
+        return self
+
+    def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        self.randomize(None)
+        if not self._do_transform:
+            return d
+
+        self.converter.randomize()
+        for key in self.key_iterator(d):
+            d[key] = self.converter(d[key], randomize=False)
+
+        return d
+            
 
 class Clahed(MapTransform):
     """Dictionary-based wrapper of :py:class:`monai_ex.transforms.Clahe`."""
