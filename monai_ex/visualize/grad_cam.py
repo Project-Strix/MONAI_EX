@@ -5,6 +5,7 @@ import numpy as np
 
 from monai.visualize import GradCAM, default_upsampler, default_normalizer
 from monai.utils import ensure_tuple
+from monai_ex.utils import ensure_list
 
 
 class GradCAMEx(GradCAM):
@@ -31,13 +32,13 @@ class GradCAMEx(GradCAM):
     def _upsample_and_post_process(self, acti_maps, x, spatial_size=None):
         # upsampling and postprocessing
         outputs = []
-        acti_maps = ensure_tuple(acti_maps)
+        acti_maps = acti_maps if isinstance(acti_maps, (list, tuple)) else (acti_maps, )
         for acti_map in acti_maps:
             if self.upsampler:
                 img_spatial = spatial_size if spatial_size else x.shape[2:]
                 acti_map = self.upsampler(img_spatial)(acti_map)
             if self.postprocessing:
-                acti_map = self.postprocessing(acti_map)
+                acti_map = self.postprocessing(acti_map).cpu()
             outputs.append(acti_map)
 
         return np.concatenate(outputs, axis=1)
