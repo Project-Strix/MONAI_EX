@@ -24,17 +24,6 @@ class CustomKeys:
     BACKWARD: str = "grad"
 
 
-class RcnnKeys:
-    """
-    A set of common keys for RCNN-style networks.
-    """    
-
-    IMAGE: str = "image"
-    LABEL: str = "label"
-    ROI_LABEL: str = "roi_label"
-    ROI_BBOX: str = "roi_bbox"
-    ROI_MASK: str = 'roi_mask'
-
 def get_keys_list(keytype):
     key_names = keytype.__annotations__.keys()
     return [keytype.__dict__[k] for k in key_names]
@@ -47,10 +36,7 @@ def default_prepare_batch_ex(
     batchdata: Dict[str, torch.Tensor]
 ) -> Union[Tuple[torch.Tensor, Optional[torch.Tensor]], torch.Tensor]:
     assert isinstance(batchdata, dict), "default prepare_batch expects dictionary input data."
-    if RcnnKeys.ROI_BBOX in batchdata or RcnnKeys.ROI_LABEL in batchdata:
-        return batchdata[RcnnKeys.IMAGE], batchdata[RcnnKeys.LABEL], \
-               batchdata[RcnnKeys.ROI_BBOX], batchdata[RcnnKeys.ROI_LABEL]
-    elif CommonKeys.LABEL in batchdata:
+    if CommonKeys.LABEL in batchdata:
         return batchdata[CommonKeys.IMAGE], batchdata[CommonKeys.LABEL]
     elif GanKeys.REALS in batchdata:
         return batchdata[GanKeys.REALS]
