@@ -11,7 +11,8 @@ from monai.utils import ensure_tuple_rep
 from monai_ex.utils import ensure_list
 from monai_ex.utils.exceptions import TransformException
 
-from monai.transforms import SplitChannel
+from monai.transforms.utility.array import SplitChannel
+from monai.transforms.utils import is_positive
 from monai_ex.transforms.utility.array import (
     CastToTypeEx,
     ToTensorEx,
@@ -469,12 +470,16 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
         k_erode: int,
         k_dilate: int,
         alpha: float = 0.8,
-        label_idx: Optional[int] = None,
+        mask_select_fn: Callable = is_positive,
+        source_label_value: Optional[int] = None,
+        log_name: Optional[str] = None,
     ) -> None:
         super().__init__(keys)
         self.mask_key = mask_key
         self.source_dataset = source_dataset
-        self.generator = RandSoftCopyPaste(k_erode, k_dilate, alpha, label_idx)
+        self.generator = RandSoftCopyPaste(k_erode, k_dilate, alpha, source_label_value, log_name)
+        self.mask_select_fn = mask_select_fn
+        self.logger = logging.getLogger(log_name)
 
     def randomize(self) -> None:
         return self.R.randint(len(self.source_dataset))
@@ -493,7 +498,7 @@ class RandSoftCopyPasted(Randomizable, MapTransform):
             except ValueError as e:
                 raise TransformException("Source dataset should return two data: source_image, source_mask.\nErr msg: {e}")
             else:
-                d[key] = self.generator(source_image, source_mask, target_image, target_mask)
+                d[key] = self.generator(source_image, source_mask, target_image, self.mask_select_fn(target_mask))
 
         return d
 
@@ -507,3 +512,4 @@ ConcatModalityD = ConcatModalityDict = ConcatModalityd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 RandLabelToMaskD = RandLabelToMaskDict = RandLabelToMaskd
 GetItemD = GetItemDict = GetItemd
+RandSoftCopyPasteD = RandSoftCopyPasteDict = RandSoftCopyPasted

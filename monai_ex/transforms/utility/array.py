@@ -213,13 +213,15 @@ class RandSoftCopyPaste(Randomizable, Transform):
         k_erode: int,
         k_dilate: int,
         alpha: float = 0.8,
-        label_idx: Optional[int] = None,
+        source_label_value: Optional[int] = None,
+        log_name: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.k_erode = k_erode
         self.k_dilate = k_dilate
         self.alpha = alpha
-        self.label_idx = label_idx
+        self.source_label_value = source_label_value
+        self.logger = logging.getLogger(log_name)
 
     def soften(self, src_mask):
         struct = ndi.generate_binary_structure(src_mask.ndim, 2)
@@ -278,15 +280,15 @@ class RandSoftCopyPaste(Randomizable, Transform):
         target_mask: Optional[NdarrayTensor] = None,
     ) -> NdarrayTensor:
         if source_mask.shape[0] > 1:
-            if self.label_idx is None:
+            if self.source_label_value is None:
                 raise ValueError("Multi-channel label data need to specify label_idx")
             else:
-                source_mask = source_mask[self.label_idx, ...]
+                source_mask = source_mask[self.source_label_value, ...]
         elif source_mask.shape[0] == 1:
-            if self.label_idx is None:
+            if self.source_label_value is None:
                 source_mask = (source_mask > 0).squeeze(0)
             else:
-                source_mask = (source_mask == self.label_idx).squeeze(0)
+                source_mask = (source_mask == self.source_label_value).squeeze(0)
 
         softed_mask = self.soften(source_mask)
         softed_mask = softed_mask[np.newaxis, ...]

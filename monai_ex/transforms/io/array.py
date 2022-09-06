@@ -31,7 +31,7 @@ class GenerateSyntheticData(Transform):
         self.channel_dim = channel_dim
         self.random_state = random_state
 
-    def __call__(self, data: Any):
+    def __call__(self, data: Optional[Any] = None):
         if self.depth:
             img, seg = create_test_image_3d(
                 self.height,
@@ -81,7 +81,7 @@ class GenerateRandomData(Transform):
         self.channel_dim = channel_dim
         self.random_state = random_state
 
-    def __call__(self, data: Any):
+    def __call__(self, data: Optional[Any] = None):
         if self.depth:
             image = np.random.rand(self.width, self.height, self.depth)
         else:
