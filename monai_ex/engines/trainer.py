@@ -572,7 +572,12 @@ class SemiMultiTaskTrainer(MultiTaskTrainer):
         else:
             inputs, targets, args, kwargs = batch
         
-        unlabel_batchdata = next(self._unlabel_dataloader_iter)
+        try:
+            unlabel_batchdata = next(self._unlabel_dataloader_iter)
+        except:
+            self._unlabel_dataloader_iter = iter(self.unlabel_data_loader)
+            unlabel_batchdata = next(self._unlabel_dataloader_iter)
+
         unlabel_batch = self.prepare_unlabel_batch(unlabel_batchdata, engine.state.device, engine.non_blocking)
 
         if len(unlabel_batch) == 2:
@@ -583,9 +588,14 @@ class SemiMultiTaskTrainer(MultiTaskTrainer):
         # args = (unlabel_inputs,) + args
         
         # put iteration outputs into engine.state
+        engine.state.output = {
+            self.keys["IMAGE"]: inputs,
+            self.keys["LABEL"]: targets,
+            self.keys["UNLABEL_IMAGE"]: unlabel_inputs,
+            self.keys["UNLABEL_LABEL"]: unlabel_targets,
+        }
         inputs = (inputs, unlabel_inputs)
         targets = (targets, unlabel_targets)
-        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
 
         def _compute_pred_loss():
             preds = self.inferer(inputs, self.network, *args, **kwargs)
