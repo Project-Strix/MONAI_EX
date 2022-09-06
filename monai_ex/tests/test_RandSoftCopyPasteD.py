@@ -40,6 +40,7 @@ def test_randsoftcopypaste(dim):
                 k_erode=2,
                 k_dilate=5,
                 alpha=0.8,
+                prob=1,
                 source_label_value=1,
                 mask_select_fn=lambda x: x == 0,
             )
