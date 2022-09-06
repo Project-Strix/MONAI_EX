@@ -102,6 +102,7 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
         frame_dim: int = -1,
         max_frames: int = 64,
         prefix_name: str = "",
+        logger_name: Optional[str] = None,
     ):
         super().__init__(
             summary_writer=summary_writer,
@@ -117,13 +118,21 @@ class TensorBoardImageHandlerEx(TensorBoardImageHandler):
             max_frames=max_frames,
         )
         self.prefix_name = prefix_name
+        self.logger = logging.getLogger(logger_name)
 
     def __call__(self, engine: Engine):
         step = self.global_iter_transform(
             engine.state.epoch if self.epoch_level else engine.state.iteration
         )
-        image_tensor = self.batch_transform(engine.state.batch)[0]
-        label_tensor = self.batch_transform(engine.state.batch)[1]
+
+        try:
+            image_tensor = self.batch_transform(engine.state.batch)[0]
+            label_tensor = self.batch_transform(engine.state.batch)[1]
+        except KeyError as e:
+            self.logger.warn(f"Cannot find specified data: {e}. Skip tensorboard logging.")
+            return
+        except Exception as e:
+            raise ValueError(f"Error occurred in TensorBoardImageHandlerEx. {e}")
 
         if image_tensor is not None:
             show_images = image_tensor[self.index]
