@@ -167,7 +167,7 @@ class SiameseTrainer(SupervisedTrainer):
 
 class SupervisedTrainerEx(SupervisedTrainer):
     """Extension of MONAI's SupervisedTrainer.
-    Extended: 
+    Extended:
       `custom_keys`: Input custom_keys setting.
       `ensure_dims`: Add simple confirmation for tensor dims of `pred` and `label`
                      before feeding into loss fn.
@@ -230,9 +230,9 @@ class SupervisedTrainerEx(SupervisedTrainer):
     def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
         if batchdata is None:
             raise StrixException(
-                "No data were fed into the Trainer engine. "
-                "Consider the possibility that Transforms did not succeed or "
-                "there is a problem with your dataset."
+                "No data was fed to the trainer engine. "
+                "Consider the possibility that the transformation did not work "
+                "or that there is a problem with your dataset."
             )
             raise ValueError("Must provide batch data for current iteration.")
         batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
@@ -242,6 +242,120 @@ class SupervisedTrainerEx(SupervisedTrainer):
             kwargs: Dict = {}
         else:
             inputs, targets, args, kwargs = batch
+        # put iteration outputs into engine.state
+        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
+
+        def _compute_pred_loss():
+            engine.state.output[self.keys["PRED"]] = self.inferer(inputs, self.network, *args, **kwargs)
+            engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+
+            if self.ensure_dims:
+                engine.state.output[self.keys["LOSS"]] = self.loss_function(
+                    *ensure_same_dim(engine.state.output[self.keys["PRED"]], targets)
+                ).mean()
+            else:
+                engine.state.output[self.keys["LOSS"]] = self.loss_function(
+                    engine.state.output[self.keys["PRED"]], targets
+                ).mean()
+
+            engine.fire_event(IterationEvents.LOSS_COMPLETED)
+
+        self.network.train()
+        self.optimizer.zero_grad()
+        if self.amp and self.scaler is not None:
+            with torch.cuda.amp.autocast():
+                _compute_pred_loss()
+            self.scaler.scale(engine.state.output[self.keys["LOSS"]]).backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            _compute_pred_loss()
+            engine.state.output[self.keys["LOSS"]].backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.optimizer.step()
+        engine.fire_event(IterationEvents.MODEL_COMPLETED)
+
+        return engine.state.output
+
+
+class SemiSupervisedTrainer(SupervisedTrainerEx):
+    def __init__(
+        self,
+        device: torch.device,
+        max_epochs: int,
+        train_data_loader: Union[Iterable, DataLoader],
+        unlabel_data_loader: Union[Iterable, DataLoader],
+        network: torch.nn.Module,
+        optimizer: Optimizer,
+        loss_function: Callable,
+        epoch_length: Optional[int] = None,
+        non_blocking: bool = False,
+        prepare_batch: Callable = default_prepare_batch_ex,
+        prepare_unlabel_batch: Callable = default_prepare_batch_ex,
+        iteration_update: Optional[Callable] = None,
+        inferer: Optional[Inferer] = None,
+        postprocessing: Optional[Transform] = None,
+        key_train_metric: Optional[Dict[str, Metric]] = None,
+        additional_metrics: Optional[Dict[str, Metric]] = None,
+        metric_cmp_fn: Callable = default_metric_cmp_fn,
+        train_handlers: Optional[Sequence] = None,
+        amp: bool = False,
+        event_names: Optional[List[Union[str, EventEnum]]] = None,
+        event_to_attr: Optional[dict] = None,
+        decollate: bool = True,
+        custom_keys: Optional[dict] = None,
+        ensure_dims: bool = False,
+    ) -> None:
+        super().__init__(
+            device,
+            max_epochs,
+            train_data_loader,
+            network,
+            optimizer,
+            loss_function,
+            epoch_length,
+            non_blocking,
+            prepare_batch,
+            iteration_update,
+            inferer,
+            postprocessing,
+            key_train_metric,
+            additional_metrics,
+            metric_cmp_fn,
+            train_handlers,
+            amp,
+            event_names,
+            event_to_attr,
+            decollate,
+            custom_keys,
+            ensure_dims,
+        )
+        self.unlabel_data_loader = unlabel_data_loader
+        self._unlabel_dataloader_iter = iter(self.unlabel_data_loader)
+        self.prepare_unlabel_batch = prepare_unlabel_batch
+
+    @trycatch()
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
+        if batchdata is None:
+            raise StrixException(
+                "No data was fed to the trainer engine. "
+                "Consider the possibility that the transformation did not work "
+                "or that there is a problem with your dataset."
+            )
+            raise ValueError("Must provide batch data for current iteration.")
+        batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)
+        unlabel_batchdata = next(self._unlabel_dataloader_iter)
+        unlabel_batch = self.prepare_unlabel_batch(unlabel_batchdata, engine.state.device, engine.non_blocking)
+        if len(batch) == 2:
+            inputs, targets = batch
+            args: Tuple = ()
+            kwargs: Dict = {}
+        else:
+            inputs, targets, args, kwargs = batch
+
+        args = (unlabel_batch,) + args
+
         # put iteration outputs into engine.state
         engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
 
@@ -388,3 +502,131 @@ class MultiTaskTrainer(Trainer):
         engine.fire_event(IterationEvents.MODEL_COMPLETED)
 
         return engine.state.output
+
+
+class SemiMultiTaskTrainer(MultiTaskTrainer):
+    def __init__(
+        self,
+        device: torch.device,
+        max_epochs: int,
+        train_data_loader: Union[Iterable, DataLoader],
+        unlabel_data_loader: Union[Iterable, DataLoader],
+        network: torch.nn.Module,
+        optimizer: Optimizer,
+        loss_function: List[Callable],
+        epoch_length: Optional[int] = None,
+        non_blocking: bool = False,
+        prepare_batch: Callable = default_prepare_batch_ex,
+        prepare_unlabel_batch: Callable = default_prepare_batch_ex,
+        iteration_update: Optional[Callable] = None,
+        inferer: Optional[Inferer] = None,
+        postprocessing: Optional[Transform] = None,
+        key_train_metric: Optional[Dict[str, Metric]] = None,
+        additional_metrics: Optional[Dict[str, Metric]] = None,
+        metric_cmp_fn: Callable = default_metric_cmp_fn,
+        train_handlers: Optional[Sequence] = None,
+        amp: bool = False,
+        event_names: Optional[List[Union[str, EventEnum]]] = None,
+        event_to_attr: Optional[dict] = None,
+        decollate: bool = True,
+        optim_set_to_none: bool = False,
+        custom_keys: Optional[dict] = None,
+    ) -> None:
+        super().__init__(
+            device,
+            max_epochs,
+            train_data_loader,
+            network,
+            optimizer,
+            loss_function,
+            epoch_length,
+            non_blocking,
+            prepare_batch,
+            iteration_update,
+            inferer,
+            postprocessing,
+            key_train_metric,
+            additional_metrics,
+            metric_cmp_fn,
+            train_handlers,
+            amp,
+            event_names,
+            event_to_attr,
+            decollate,
+            optim_set_to_none,
+            custom_keys,
+        )
+        self.unlabel_data_loader = unlabel_data_loader
+        self._unlabel_dataloader_iter = iter(self.unlabel_data_loader)
+        self.prepare_unlabel_batch = prepare_unlabel_batch
+
+    def _iteration(self, engine: Engine, batchdata: Dict[str, torch.Tensor]):
+        if batchdata is None:
+            raise ValueError("Must provide batch data for current iteration.")
+        batch = self.prepare_batch(batchdata, engine.state.device, engine.non_blocking)        
+        
+        if len(batch) == 2:
+            inputs, targets = batch
+            args: Tuple = ()
+            kwargs: Dict = {}
+        else:
+            inputs, targets, args, kwargs = batch
+        
+        unlabel_batchdata = next(self._unlabel_dataloader_iter)
+        unlabel_batch = self.prepare_unlabel_batch(unlabel_batchdata, engine.state.device, engine.non_blocking)
+
+        if len(unlabel_batch) == 2:
+            unlabel_inputs, unlabel_targets = unlabel_batch
+        else:
+            raise NotImplementedError
+
+        # args = (unlabel_inputs,) + args
+        
+        # put iteration outputs into engine.state
+        inputs = (inputs, unlabel_inputs)
+        targets = (targets, unlabel_targets)
+        engine.state.output = {self.keys["IMAGE"]: inputs, self.keys["LABEL"]: targets}
+
+        def _compute_pred_loss():
+            preds = self.inferer(inputs, self.network, *args, **kwargs)
+            engine.state.output[self.keys["PRED"]] = preds
+            engine.fire_event(IterationEvents.FORWARD_COMPLETED)
+            if not isinstance(preds, tuple):
+                raise ValueError(
+                    "Predictions must be tuple in multi-task framework",
+                    f"but got {type(engine.state.output[self.keys['PRED']])}",
+                )
+            if not isinstance(targets, tuple):
+                raise ValueError(f"Targets must be tuple in multi-task framework, but got {type(targets)}")
+            if len(preds) != len(targets):
+                raise ValueError(f"Predictions len must equal to targets, but got {len(preds)} != {len(targets)}")
+
+            loss = self.loss_function(preds, targets)
+
+            engine.state.output[self.keys["LOSS"]] = loss
+            engine.fire_event(IterationEvents.LOSS_COMPLETED)
+
+        self.network.train()
+        # `set_to_none` only work from PyTorch 1.7.0
+        if not pytorch_after(1, 7):
+            self.optimizer.zero_grad()
+        else:
+            self.optimizer.zero_grad(set_to_none=self.optim_set_to_none)
+
+        if self.amp and self.scaler is not None:
+            with torch.cuda.amp.autocast():
+                _compute_pred_loss()
+            self.scaler.scale(engine.state.output[self.keys["LOSS"]]).backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            _compute_pred_loss()
+            engine.state.output[self.keys["LOSS"]].backward()
+            engine.fire_event(IterationEvents.BACKWARD_COMPLETED)
+            self.optimizer.step()
+        engine.fire_event(IterationEvents.MODEL_COMPLETED)
+
+        return engine.state.output
+
+
