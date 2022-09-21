@@ -9,7 +9,11 @@ import numpy as np
 import torch
 
 from monai.transforms.compose import Transform, Randomizable
+from monai.transforms.croppad.array import ResizeWithPadOrCrop
+from monai.transforms.utils import Fourier
+from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 from monai.utils import InterpolateMode, ensure_tuple, ensure_tuple_size
+from monai.utils.type_conversion import NdarrayOrTensor, convert_data_type, convert_to_dst_type
 from scipy import ndimage as ndi
 
 
@@ -233,3 +237,83 @@ class Rotate90Ex(Transform):
             return np.stack(rotated).astype(img.dtype)
         else:
             return np.stack(rotated)
+
+
+class KSpaceResample(Transform, Fourier):
+    """Resample input image into the specified `pixdim` in K-space domain."""
+
+    def __init__(
+        self,
+        pixdim: Union[Sequence[float], float],
+        diagonal: bool = False,
+        device: Optional[torch.device] = None,
+        tolerance: float = 1e-3,
+        image_only: bool = False,
+    ) -> None:
+        """
+        Args:
+            pixdim (Union[Sequence[float], float]): output voxel spacing. if providing a single number,
+                will use it for the first dimension. items of the pixdim sequence map to the spatial
+                dimensions of input image, if length of pixdim sequence is longer than image spatial dimensions,
+                will ignore the longer part, if shorter, will pad with `1.0`.
+            diagonal (bool, optional): whether to resample the input to have a diagonal affine matrix.
+                If True, the input data is resampled to the following affine::
+                    np.diag((pixdim_0, pixdim_1, ..., pixdim_n, 1))
+                This effectively resets the volume to the world coordinate system (RAS+ in nibabel).
+                The original orientation, rotation, shearing are not preserved.
+                If False, this transform preserves the axes orientation, orthogonal rotation and
+                translation components from the original affine. This option will not flip/swap axes
+                of the original data. Defaults to False.
+            device (Optional[torch.device], optional): device to store the output grid data. Defaults to None.
+            tolerance (float): Skip resample if spacing is same within given tolerance.
+            image_only (bool): return just the image or image with old affine and new affine. Default is `False`.
+        """
+        super().__init__()
+        self.pixdim = np.array(ensure_tuple(pixdim), dtype=np.float64)
+        self.diagonal = diagonal
+        self.device = device
+        self.tolerance = tolerance
+        self.image_only = image_only
+
+    def __call__(self, img: NdarrayOrTensor, affine: Optional[np.ndarray] = None):
+        sr = int(img.ndim - 1)
+        if sr <= 0:
+            raise ValueError("data_array must have at least one spatial dimension.")
+        if affine is None:
+            # default to identity
+            affine = np.eye(sr + 1, dtype=np.float64)
+            affine_ = np.eye(sr + 1, dtype=np.float64)
+        else:
+            affine_np, *_ = convert_data_type(affine, np.ndarray)  # type: ignore
+            affine_ = to_affine_nd(sr, affine_np)
+
+        out_d = self.pixdim[:sr]
+        if out_d.size < sr:
+            out_d = np.append(out_d, [1.0] * (out_d.size - sr))
+        if np.any(out_d <= 0):
+            raise ValueError(f"pixdim must be positive, got {out_d}.")
+
+        # compute output affine, shape and offset
+        new_affine = zoom_affine(affine_, out_d, diagonal=self.diagonal)
+        output_shape, offset = compute_shape_offset(img.shape[1:], affine_, new_affine)
+        new_affine[:sr, -1] = offset[:sr]
+        transform = np.linalg.inv(affine_) @ new_affine
+        # adapt to the actual rank
+        transform = to_affine_nd(sr, transform)
+
+        # no resampling if it's identity transform
+        if np.allclose(transform, np.diag(np.ones(len(transform))), atol=self.tolerance):
+            output_data = img
+        else:
+            k = self.shift_fourier(img, sr)
+            k = ResizeWithPadOrCrop(spatial_size=output_shape)(k)
+            output_data = self.inv_shift_fourier(k, sr)
+
+        output_data, *_ = convert_to_dst_type(output_data, img, dtype=torch.float32)
+        new_affine = to_affine_nd(affine_np, new_affine)  # type: ignore
+        new_affine, *_ = convert_to_dst_type(src=new_affine, dst=affine, dtype=torch.float32)
+
+        if self.image_only:
+            return output_data
+        return output_data, affine, new_affine
+
