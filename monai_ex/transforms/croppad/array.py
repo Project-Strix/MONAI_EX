@@ -534,12 +534,12 @@ class SelectSlicesByMask(Extract3DImageToSlices):
             starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
             return [(starts[axis] + ends[axis]) // 2]
         elif self.slice_select_mode == "all":
-            starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
-            return list(range(starts[axis], ends[axis] + 1))
+            axes = np.delete(np.arange(mask_data.ndim), axis + 1)
+            slice_indices = np.where(np.any(mask_data, axis=tuple(axes)))[0]
+            return slice_indices.tolist()
         elif self.slice_select_mode == "maximum":
-            axes = np.delete(np.arange(3), axis)
-            mask_data_ = mask_data.squeeze()
-            z_index = np.argmax(np.count_nonzero(mask_data_, axis=tuple(axes)))
+            axes = np.delete(np.arange(mask_data.ndim), axis + 1)
+            z_index = np.argmax(np.count_nonzero(mask_data, axis=tuple(axes)))
             return [z_index]
 
     def __call__(
