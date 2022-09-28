@@ -529,17 +529,19 @@ class SelectSlicesByMask(Extract3DImageToSlices):
         self.mask_select_fn = mask_select_fn
         self.slice_select_mode = slice_select_mode
 
-    def get_slice_indices(self, mask_data, axis):
+    def get_slice_indices(self, mask_data):
+        mask_data = self.mask_select_fn(mask_data)
+
         if self.slice_select_mode == "center":
             starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
-            return [(starts[axis] + ends[axis]) // 2]
+            return [(starts[self.axis] + ends[self.axis]) // 2]
         elif self.slice_select_mode == "all":
-            starts, ends = generate_spatial_bounding_box(mask_data, self.mask_select_fn)
-            return list(range(starts[axis], ends[axis] + 1))
+            axes = np.delete(np.arange(mask_data.ndim), self.axis + 1)
+            slice_indices = np.where(np.any(mask_data, axis=tuple(axes)))[0]
+            return slice_indices.tolist()
         elif self.slice_select_mode == "maximum":
-            axes = np.delete(np.arange(3), axis)
-            mask_data_ = mask_data.squeeze()
-            z_index = np.argmax(np.count_nonzero(mask_data_, axis=tuple(axes)))
+            axes = np.delete(np.arange(mask_data.ndim), self.axis + 1)
+            z_index = np.argmax(np.count_nonzero(mask_data, axis=tuple(axes)))
             return [z_index]
 
     def __call__(
@@ -551,7 +553,6 @@ class SelectSlicesByMask(Extract3DImageToSlices):
             raise ValueError("Unknown mask_data.")
 
         mask_data_ = msk if msk is not None else self.mask_data
-        mask_data_ = self.mask_select_fn(mask_data_)
 
         if mask_data_.shape[0] != 1 and mask_data_.shape[0] != img.shape[0]:
             raise ValueError(
@@ -559,7 +560,7 @@ class SelectSlicesByMask(Extract3DImageToSlices):
                 f"got img={img.shape[0]} mask_data={mask_data_.shape[0]}."
             )
 
-        slice_indices = self.get_slice_indices(mask_data_, self.axis)
+        slice_indices = self.get_slice_indices(mask_data_)
 
         return super().__call__(img, slice_indices)
 

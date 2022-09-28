@@ -448,19 +448,17 @@ class SelectSlicesByMaskd(MapTransform):
     def __call__(self, data: Mapping[Hashable, NdarrayOrTensor]) -> Dict[Hashable, NdarrayOrTensor]:
         d = dict(data)
 
-        ret = []
+        slice_indices = self.cropper.get_slice_indices(d[self.mask_key])
+        ret: List[Dict[Hashable, NdarrayOrTensor]] = [dict(d) for _ in range(len(slice_indices))]
+
         for key in self.key_iterator(d):
             image = d[key]
             mask = d[self.mask_key]
             selected_slices = self.cropper(image, mask)
-            if ret:  # support dynamic slice num
-                for i, selected_slice in enumerate(selected_slices):
-                    ret[i][key] = selected_slice
-                    self.add_meta_dict(ret[i], d, key, i)
-            else:
-                for i, selected_slice in enumerate(selected_slices):
-                    ret.append({key: selected_slice})
-                    self.add_meta_dict(ret[-1], d, key, i)
+
+            for i, selected_slice in enumerate(selected_slices):
+                ret[i][key] = selected_slice
+                self.add_meta_dict(ret[i], d, key, i)
 
         return ret
 
