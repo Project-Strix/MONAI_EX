@@ -255,7 +255,9 @@ class KSpaceResample(Transform, Fourier):
             pixdim (Union[Sequence[float], float]): output voxel spacing. if providing a single number,
                 will use it for the first dimension. items of the pixdim sequence map to the spatial
                 dimensions of input image, if length of pixdim sequence is longer than image spatial dimensions,
-                will ignore the longer part, if shorter, will pad with `1.0`.
+                will ignore the longer part, if shorter, will pad with the last value. 
+                For example, for 3D image if pixdim is [2.0] will be padded to [2.0, 2.0, 2.0];
+                    [1.0, 2.0] it will be padded to [1.0, 2.0, 2.0]
             diagonal (bool, optional): whether to resample the input to have a diagonal affine matrix.
                 If True, the input data is resampled to the following affine::
                     np.diag((pixdim_0, pixdim_1, ..., pixdim_n, 1))
@@ -289,7 +291,7 @@ class KSpaceResample(Transform, Fourier):
 
         out_d = self.pixdim[:sr]
         if out_d.size < sr:
-            out_d = np.append(out_d, [1.0] * (out_d.size - sr))
+            out_d = np.append(out_d, [out_d[-1]] * (sr - out_d.size))
         if np.any(out_d <= 0):
             raise ValueError(f"pixdim must be positive, got {out_d}.")
 
@@ -316,4 +318,3 @@ class KSpaceResample(Transform, Fourier):
         if self.image_only:
             return output_data
         return output_data, affine, new_affine
-
