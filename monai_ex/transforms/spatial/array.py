@@ -8,6 +8,7 @@ from typing import Optional, Sequence, Union, Tuple
 import numpy as np
 import torch
 
+from torch.nn.functional import interpolate as _torch_interp
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms.croppad.array import ResizeWithPadOrCrop
 from monai.transforms.utils import Fourier
@@ -253,11 +254,11 @@ class KSpaceResample(Transform, Fourier):
         """
         Args:
             pixdim (Union[Sequence[float], float]): output voxel spacing. if providing a single number,
-                will use it for the first dimension. items of the pixdim sequence map to the spatial
-                dimensions of input image, if length of pixdim sequence is longer than image spatial dimensions,
+                it will be used as isotropic spacing, e.g. [2.0] will be padded to [2.0, 2.0, 2.0]. 
+                Items of the pixdim sequence map to the spatial dimensions of input image, 
+                if length of pixdim sequence is longer than image spatial dimensions,
                 will ignore the longer part, if shorter, will pad with the last value. 
-                For example, for 3D image if pixdim is [2.0] will be padded to [2.0, 2.0, 2.0];
-                    [1.0, 2.0] it will be padded to [1.0, 2.0, 2.0]
+                For example, for 3D image if pixdim is [1.0, 2.0] it will be padded to [1.0, 2.0, 2.0]
             diagonal (bool, optional): whether to resample the input to have a diagonal affine matrix.
                 If True, the input data is resampled to the following affine::
                     np.diag((pixdim_0, pixdim_1, ..., pixdim_n, 1))
