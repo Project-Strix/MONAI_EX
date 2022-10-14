@@ -12,6 +12,12 @@ else:
 
 
 class LearningHistoryRecordHandler:
+    """Record losses and learning rates during the training.
+
+    Args:
+        loss_transform (Callable): transfrom to extract loss from engine
+        logger_name (Optional[str], optional): logger name. Defaults to None.
+    """
     def __init__(
         self,
         loss_transform: Callable,
