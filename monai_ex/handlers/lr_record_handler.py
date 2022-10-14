@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Optional, Callable
 
+import torch
+
 from monai.utils import exact_version, optional_import
 
 if TYPE_CHECKING:
@@ -9,7 +11,7 @@ else:
     Events, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Events")
 
 
-class LearningRateRecordHandler:
+class LearningHistoryRecordHandler:
     def __init__(
         self,
         loss_transform: Callable,
@@ -36,6 +38,12 @@ class LearningRateRecordHandler:
     def iteration_completed(self, engine: Engine) -> None:
         loss = self.loss_transform(engine.state.output)
         if loss is not None:
-            self.history["loss"].append(float(loss.detach().cpu().numpy()))
+            if isinstance(loss, torch.Tensor):
+                loss = float(loss.detach().cpu().numpy())
+            elif isinstance(loss, (tuple, list)):
+                raise NotImplementedError("Multiple losses are not supported yet!")
+
+            self.history["loss"].append(loss)
+
         # if all weights use same lr
         self.history["lr"].append(engine.optimizer.param_groups[0]['lr'])
