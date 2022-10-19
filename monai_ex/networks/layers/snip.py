@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 from .prunable_conv import (
     PrunableWeights,
     PrunableConv3d,
@@ -13,7 +12,7 @@ from .prunable_conv import (
 
 import os, copy, types, time, json
 import numpy as np
-from utils_cw import Print
+from monai_ex.utils.misc import Print
 
 
 def snip_forward_conv2d(self, x):
@@ -94,135 +93,6 @@ def _count_diff(w0, w1):
     return diff_num
 
 
-def get_pretrain_pruned_unet(opts, in_model, origin_model, channel_mask, verbose=False):
-    Print("Copy pretrained weights...", color="g")
-    if isinstance(channel_mask[0], torch.Tensor):
-        channel_mask = [c.cpu().numpy().tolist() for c in channel_mask]
-    elif isinstance(channel_mask[0], np.ndarray):
-        channel_mask = [c.tolist() for c in channel_mask]
-
-    new_model = copy.deepcopy(in_model)
-
-    Print("Input chs:", [len(c) for c in channel_mask], color="y")
-
-    layer_idx = 0
-    start_mask, end_mask = [1], channel_mask[layer_idx]
-    unet_concat_config = {15: 1, 12: 3, 9: 5}
-    prev_masks = {}
-    for i, (m0, m1) in enumerate(
-        zip(origin_model.modules(), new_model.modules())
-    ):  # conv->bn order
-        keep_prev_mask = True if layer_idx in unet_concat_config.values() else False
-        restore_prev_mask = True if layer_idx in unet_concat_config.keys() else False
-
-        if isinstance(m0, nn.BatchNorm3d):
-            idx1 = np.squeeze(np.argwhere(end_mask))
-            if idx1.size == 1:
-                idx1 = np.resize(idx1, (1,))
-            Print(
-                "  Batch3D channel:", len(end_mask), "m0 w-shape:", m0.weight.data.shape
-            )
-            assert (
-                m1.weight.data.shape == m0.weight.data[idx1.tolist()].shape
-            ), "Dim mismatch {}!={}".format(
-                m1.weight.data.shape, m0.weight.data[idx1.tolist()].shape
-            )
-            assert (
-                m1.bias.data.shape == m0.bias.data[idx1.tolist()].shape
-            ), "Dim mismatch {}!={}".format(
-                m1.bias.data.shape, m0.bias.data[idx1.tolist()].shape
-            )
-
-            m1.weight.data = m0.weight.data[idx1.tolist()].clone()
-            m1.bias.data = m0.bias.data[idx1.tolist()].clone()
-            m1.num_batches_tracked = m0.num_batches_tracked.clone()
-            m1.running_mean = m0.running_mean[idx1.tolist()].clone()
-            m1.running_var = m0.running_var[idx1.tolist()].clone()
-            layer_idx += 1
-            start_mask = end_mask.copy()
-            if layer_idx < len(channel_mask):  # do not change in Final FC
-                end_mask = channel_mask[layer_idx]
-        elif isinstance(m0, PrunableWeights):
-            if keep_prev_mask:
-                prev_masks[layer_idx] = [start_mask, end_mask]
-
-            if restore_prev_mask:
-                old_mask = prev_masks[unet_concat_config[layer_idx]]
-                start_mask = np.concatenate((np.array(old_mask[1]), start_mask))
-                Print(
-                    "Restore prev {}th to {}th: {} -> {}:".format(
-                        unet_concat_config[layer_idx],
-                        layer_idx,
-                        len(old_mask[1]),
-                        len(start_mask),
-                    ),
-                    color="y",
-                    verbose=verbose,
-                )
-            assert (
-                len(start_mask) == m0.weight.data.shape[1]
-                and len(end_mask) == m0.weight.data.shape[0]
-            ), "Channel mismatch at {}-{},{}-{}".format(
-                len(start_mask),
-                m0.weight.data.shape[1],
-                len(end_mask),
-                m0.weight.data.shape[0],
-            )
-
-            if isinstance(m0, PrunableConv3d):
-                idx0 = np.squeeze(np.argwhere(start_mask))
-                idx1 = np.squeeze(np.argwhere(end_mask))
-            else:
-                idx1 = np.squeeze(np.argwhere(start_mask))
-                idx0 = np.squeeze(np.argwhere(end_mask))
-
-            Print(
-                "OriLayer {}:{}\n  In channel: {:d}->{:d}, Out channel {:d}->{:d}\n".format(
-                    layer_idx, m0, len(start_mask), idx0.size, len(end_mask), idx1.size
-                ),
-                color="g",
-                verbose=verbose,
-            )
-
-            if idx0.size == 1:
-                idx0 = np.resize(idx0, (1,))
-            if idx1.size == 1:
-                idx1 = np.resize(idx1, (1,))
-            w1 = m0.weight.data[:, idx0.tolist(), ...].clone()
-            w1 = w1[idx1.tolist(), ...].clone()
-
-            assert (
-                m1.weight.data.shape == w1.shape
-            ), "Weight dim mismatch {}!={}".format(m1.weight.data.shape, w1.shape)
-            m1.weight.data = w1.clone()
-
-            if isinstance(m0, PrunableDeconv3d):
-                idx1 = idx0
-
-            assert (
-                m1.bias.data.shape == m0.bias.data[idx1.tolist()].shape
-            ), "Bias dim mismatch {}!={}".format(
-                m1.bias.data.shape, m0.bias.data[idx1.tolist()].shape
-            )
-            m1.bias.data = m0.bias.data[idx1.tolist()].clone()
-
-            if isinstance(m0, PrunableDeconv3d):
-                layer_idx += 1
-                start_mask = end_mask.copy()
-                if layer_idx < len(channel_mask):
-                    end_mask = channel_mask[layer_idx]
-        elif isinstance(m0, nn.Conv3d):  # last classify conv
-            idx0 = np.squeeze(np.argwhere(start_mask))
-            w1 = m0.weight.data[:, idx0.tolist(), ...].clone()
-            assert (
-                m1.weight.data.shape == w1.shape
-            ), "Weight dim mismatch {}!={}".format(m1.weight.data.shape, w1.shape)
-            m1.weight.data = w1.clone()
-            m1.bias.data = m0.bias.data.clone()
-
-    return new_model
-
-
 def SNIP(
     input_net,
     prepare_batch_fn,
@@ -268,6 +138,8 @@ def SNIP(
         elif spatial_ndim == 2:
             snip_conv_forward = snip_forward_conv2d
             snip_deconv_forward = snip_forward_deconv2d
+        else:
+            raise NotImplementedError
 
         # Override the forward methods:
         if isinstance(layer, (PrunableConv3d, PrunableConv2d)):

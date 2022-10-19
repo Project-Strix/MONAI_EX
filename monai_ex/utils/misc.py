@@ -1,14 +1,46 @@
+import os
+from pathlib import Path
 from typing import Any, List
 
-import torch 
-
+import torch
 from monai.utils.misc import issequenceiterable
-from functools import partial
-from utils_cw import catch_exception
-from .exceptions import GenericException
+from termcolor import colored
 
 
-trycatch = partial(catch_exception, handled_exception_type=GenericException, path_keywords=['strix','monai_ex'])
+def check_dir(*arg, isFile=False, exist_ok=True):
+    path = Path(*arg)
+    filename = ""
+    if isFile:
+        filename = path.name
+        path = path.parent
+
+    if not path.is_dir():
+        os.makedirs(path, exist_ok=exist_ok)
+    return path / filename if isFile else path
+
+
+def Print(*message, color=None, on_color=None, sep=" ", end="\n", verbose=True):
+    """
+    Print function integrated with color.
+    """
+    if verbose:
+        color_map = {
+            "r": "red",
+            "g": "green",
+            "b": "blue",
+            "y": "yellow",
+            "m": "magenta",
+            "c": "cyan",
+            "w": "white",
+        }
+        if color is None:
+            print(*message, end=end)
+        else:
+            color = color_map[color] if len(color) == 1 else color
+            print(
+                colored(sep.join(map(str, message)), color=color, on_color=on_color),
+                end=end,
+            )
 
 
 def ensure_same_dim(tensor1, tensor2):
@@ -30,7 +62,9 @@ def ensure_list(vals: Any):
     Returns a list of `vals`.
     """
     if not issequenceiterable(vals) or isinstance(vals, dict):
-        vals = [vals, ]
+        vals = [
+            vals,
+        ]
 
     return list(vals)
 
@@ -43,7 +77,9 @@ def ensure_list_rep(vals: Any, dim: int) -> List[Any]:
         ValueError: When ``tup`` is a sequence and ``tup`` length is not ``dim``.
     """
     if not issequenceiterable(vals):
-        return [vals,] * dim
+        return [
+            vals,
+        ] * dim
     elif len(vals) == dim:
         return list(vals)
 
@@ -56,7 +92,7 @@ def _register_generic(module_dict, module_name, module):
 
 
 class Registry(dict):
-    '''
+    """
     A helper class for managing registering modules, it extends a dictionary
     and provides a register functions.
 
@@ -76,7 +112,8 @@ class Registry(dict):
 
     Access of module is just like using a dictionary, eg:
         f = some_registry["foo_modeul"]
-    '''
+    """
+
     def __init__(self, *args, **kwargs):
         super(Registry, self).__init__(*args, **kwargs)
 
