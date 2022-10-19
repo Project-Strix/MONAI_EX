@@ -1,21 +1,30 @@
 import logging
 from typing import TYPE_CHECKING, Optional
+from pathlib import Path
 
 import torch
 import numpy as np
 import nibabel as nib
 
-from monai.utils import exact_version, optional_import
+from monai.utils.module import exact_version, optional_import
 from monai_ex.visualize import GradCAMEx as GradCAM, LayerCAM
 from strix.utilities.utils import apply_colormap_on_image
 
 from PIL import Image
-from utils_cw import Normalize2
 
 if TYPE_CHECKING:
     from ignite.engine import Engine
 else:
     Engine, _ = optional_import("ignite.engine", "0.4.7", exact_version, "Engine")
+
+
+def minmax_norm(data):
+    '''
+    Min-Max normalization
+    '''
+    minValue, maxValue = np.min(data), np.max(data)
+    norm_data = (data - minValue) / (maxValue - minValue)
+    return norm_data.astype(np.float32)
 
 
 class GradCamHandler:
@@ -29,7 +38,7 @@ class GradCamHandler:
         method: str = "gradcam",
         fusion: bool = False,
         hierarchical: bool = False,
-        save_dir: Optional[str] = None,
+        save_dir: Optional[Path] = None,
         device: torch.device = torch.device("cpu"),
         logger_name: Optional[str] = None,
     ) -> None:
@@ -94,10 +103,11 @@ class GradCamHandler:
                     file_name = (
                         f"batch{i}_{j}_cam_{self.suffix}_{self.target_layers}.nii.gz"
                     )
-                    nib.save(
-                        nib.Nifti1Image(img_slice.squeeze(), np.eye(4)),
-                        self.save_dir / f"batch{i}_{j}_images.nii.gz",
-                    )
+                    if self.save_dir:
+                        nib.save(
+                            nib.Nifti1Image(img_slice.squeeze(), np.eye(4)),
+                            self.save_dir / f"batch{i}_{j}_images.nii.gz",
+                        )
 
                     if cam_slice.shape[0] > 1 and self.fusion:
                         output_cam = cam_slice.mean(axis=0).squeeze()
@@ -108,24 +118,26 @@ class GradCamHandler:
                     else:
                         output_cam = cam_slice.transpose(1, 2, 3, 0).squeeze()
 
-                    nib.save(
-                        nib.Nifti1Image(output_cam, np.eye(4)),
-                        self.save_dir / file_name,
-                    )
+                    if self.save_dir:
+                        nib.save(
+                            nib.Nifti1Image(output_cam, np.eye(4)),
+                            self.save_dir / file_name,
+                        )
 
             elif len(origin_img.shape[1:]) == 2:
                 cam_result = np.uint8(cam_result.squeeze(1) * 255)
                 for j, (img_slice, cam_slice) in enumerate(zip(origin_img, cam_result)):
-                    img_slice = np.uint8(Normalize2(img_slice) * 255)
+                    img_slice = np.uint8(minmax_norm(img_slice) * 255)
 
                     img_slice = Image.fromarray(img_slice)
                     no_trans_heatmap, heatmap_on_image = apply_colormap_on_image(
                         img_slice, cam_slice, "hsv"
                     )
 
-                    heatmap_on_image.save(
-                        self.save_dir / f"batch{i}_{j}_heatmap_on_img.png"
-                    )
+                    if self.save_dir:
+                        heatmap_on_image.save(
+                            self.save_dir / f"batch{i}_{j}_heatmap_on_img.png"
+                        )
             else:
                 raise NotImplementedError(f"Cannot support ({origin_img.shape}) data.")
 
