@@ -11,9 +11,8 @@ import numpy as np
 from monai.transforms.compose import Randomizable, Compose
 from monai.transforms.transform import apply_transform
 from monai.transforms.utility.array import DataStats
-from monai.utils import ensure_tuple, get_seed
-from monai_ex.utils.misc import trycatch
-from monai_ex.utils.exceptions import TransformException
+from monai.utils.misc import ensure_tuple, get_seed
+from monai_ex.utils.exceptions import TransformException, trycatch
 
 ReturnType = TypeVar("ReturnType")
 
