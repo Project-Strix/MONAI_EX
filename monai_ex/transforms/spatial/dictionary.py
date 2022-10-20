@@ -17,6 +17,7 @@ Class names are ended with 'd' to denote dictionary-based transforms.
 
 from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, Tuple, Any
 
+import torch
 import numpy as np
 
 from monai.config import KeysCollection
@@ -25,7 +26,8 @@ from monai_ex.transforms.spatial.array import (
     FixedResize,
     LabelMorphology,
     RandLabelMorphology,
-    Rotate90Ex
+    Rotate90Ex,
+    KSpaceResample
 )
 
 from monai.utils import (
@@ -179,7 +181,57 @@ class RandRotate90Exd(Randomizable, MapTransform):
         return d
 
 
+class KSpaceResampled(MapTransform):
+    """
+    Dictionary-based wrapper of :py:class:`monai_ex.transforms.KSpaceResample`.
+
+    This transform assumes the ``data`` dictionary has a key for the input
+    data's metadata and contains `affine` field.  The key is formed by ``key_{meta_key_postfix}``.
+
+    After resampling the input array, this transform will write the new affine
+    to the `affine` field of metadata which is formed by ``key_{meta_key_postfix}``.
+
+    see also:
+        :py:class:`monai_ex.transforms.KSpaceResample`
+    """
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        pixdim: Union[Sequence[float], float],
+        diagonal: bool = False,
+        device: Optional[torch.device] = None,
+        tolerance: float = 0.0001,
+        meta_key_postfix: str = "meta_dict",
+    ) -> None:
+        super().__init__(keys)
+        self.meta_key_postfix = ensure_tuple_rep(meta_key_postfix, len(self.keys))
+        self.resizer = KSpaceResample(
+            pixdim=pixdim,
+            diagonal=diagonal,
+            device=device,
+            tolerance=tolerance,
+        )
+
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:
+        d = dict(data)
+        for key, metakey_postfix in zip(self.keys, self.meta_key_postfix):
+            meta_key = f"{key}_{metakey_postfix}"
+            # create metadata if necessary
+            if meta_key not in d:
+                d[meta_key] = {"affine": None}
+            meta_data = d[meta_key]
+
+            d[key], old_affine, new_affine = self.resizer(
+                d[key],
+                affine=meta_data["affine"],
+            )
+            meta_data["affine"] = new_affine
+        return d
+
+
 FixedResizeD = FixedResizeDict = FixedResized
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
 RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd
+KSpaceResampleD = KSpaceResampleDict = KSpaceResampled

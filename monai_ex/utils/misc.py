@@ -1,13 +1,16 @@
+import os
+from pathlib import Path
+from typing import Any, List
+
+import torch
+import numpy as np
+from monai.utils.misc import issequenceiterable
+from termcolor import colored
 import itertools
 from functools import partial
 from typing import Any, List
 
-import numpy as np
-import torch
-from monai.utils.misc import issequenceiterable
-from utils_cw import catch_exception
 
-from .exceptions import GenericException
 
 trycatch = partial(catch_exception, handled_exception_type=GenericException, path_keywords=["strix", "monai_ex"])
 
@@ -31,6 +34,40 @@ def bbox_ND(img: np.ndarray, return_range: bool = False):
     if return_range:
         return tuple(out[2 * i + 1] - out[2 * i] for i in range(len(out) // 2))
     return tuple(out)
+def check_dir(*arg, isFile=False, exist_ok=True):
+    path = Path(*arg)
+    filename = ""
+    if isFile:
+        filename = path.name
+        path = path.parent
+
+    if not path.is_dir():
+        os.makedirs(path, exist_ok=exist_ok)
+    return path / filename if isFile else path
+
+
+def Print(*message, color=None, on_color=None, sep=" ", end="\n", verbose=True):
+    """
+    Print function integrated with color.
+    """
+    if verbose:
+        color_map = {
+            "r": "red",
+            "g": "green",
+            "b": "blue",
+            "y": "yellow",
+            "m": "magenta",
+            "c": "cyan",
+            "w": "white",
+        }
+        if color is None:
+            print(*message, end=end)
+        else:
+            color = color_map[color] if len(color) == 1 else color
+            print(
+                colored(sep.join(map(str, message)), color=color, on_color=on_color),
+                end=end,
+            )
 
 
 def ensure_same_dim(tensor1, tensor2):
