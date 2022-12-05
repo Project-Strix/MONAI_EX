@@ -16,6 +16,7 @@ from monai_ex.transforms.utility.array import (
     DataStatsEx,
     DataLabelling,
     RandLabelToMask,
+    ExtractCenterline
 )
 
 from monai_ex.transforms import (
@@ -205,6 +206,7 @@ class SplitChannelExd(MapTransform):
                 d.pop(f"{key}_{self.meta_key_postfix}")
         return d
 
+
 class DataLabellingd(MapTransform):
     def __init__(
         self,
@@ -220,7 +222,6 @@ class DataLabellingd(MapTransform):
         for idx, key in enumerate(self.keys):
             d[key] = self.converter(d[key])
         return d
-
 
 
 class ConcatModalityd(MapTransform):
@@ -423,6 +424,28 @@ class RandLabelToMaskd(Randomizable, MapTransform):
         return d
 
 
+class ExtractCenterlined(Randomizable, MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.ExtractCenterline`."""
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        label_key: str,
+        allow_missing_keys: bool = False
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.label_key = label_key
+        self.transformer = ExtractCenterline()
+
+    def __call__(
+        self,
+        data: Mapping[Hashable, NdarrayOrTensor]
+    ) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        d['centerline'] = self.transformer(d[self.label_key])
+        return d
+
+
 class GetItemd(MapTransform):
     """Designed to get i-th item of given tuple.
     Eg. the output of network is a tuple.
@@ -445,6 +468,7 @@ class GetItemd(MapTransform):
             d[key] = d[key][index]
         return d
 
+
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
 DataStatsExD = DataStatsExDict = DataStatsExd
@@ -453,4 +477,5 @@ DataLabellinD = DataLabellingDict = DataLabellingd
 ConcatModalityD = ConcatModalityDict = ConcatModalityd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 RandLabelToMaskD = RandLabelToMaskDict = RandLabelToMaskd
+ExtractCenterlineD = ExtractCenterlineDict = ExtractCenterlined
 GetItemD = GetItemDict = GetItemd

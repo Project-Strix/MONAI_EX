@@ -7,7 +7,8 @@ from typing import Optional, Sequence, Union, Tuple
 
 import numpy as np
 import torch
-
+import random
+from copy import deepcopy
 from torch.nn.functional import interpolate as _torch_interp
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms.croppad.array import ResizeWithPadOrCrop
@@ -16,7 +17,10 @@ from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 from monai.utils import InterpolateMode, ensure_tuple, ensure_tuple_size
 from monai.utils.type_conversion import NdarrayOrTensor, convert_data_type, convert_to_dst_type
 from scipy import ndimage as ndi
-
+from monai.transforms.utils_pytorch_numpy_unification import (
+    floor_divide,
+    maximum
+)
 
 class FixedResize(Transform):
     """
@@ -319,3 +323,71 @@ class KSpaceResample(Transform, Fourier):
         if self.image_only:
             return output_data
         return output_data, affine, new_affine
+
+
+class RandomDrop(Randomizable, Transform):
+    """ Drop a number of patchs on the centerline of curvilinear structure randomly.
+
+    Args:
+        roi_number (int): Number of the drop roi.
+        roi_size (int): size of the drop ROI.
+        random_seed (int) : set the random state with an integer seed.
+    """
+    def __init__(
+        self,
+        roi_number: int,
+        roi_size: int,
+        random_state: int = 20221201
+    ) -> None:
+        self.roi_num = roi_number
+        self.roi_size = roi_size
+        self.random_seed = random_state
+
+    def __call__(
+        self,
+        img: NdarrayOrTensor,
+        cline: NdarrayOrTensor
+    ) -> NdarrayOrTensor:
+        """
+            Args:
+            img (NdarrayOrTensor): The image to drop patches.
+            cline (NdarrayOrTensor): The centerline of curvilinear structure, it can be extracted with `monai_ex.transforms.ExtractCenterline`
+        """
+        data = deepcopy(img)
+        dropped_data = []
+        c_points = np.nonzero(cline)
+        random.seed(self.random_seed)
+        roi_centers = random.sample(
+            [torch.FloatTensor([1, i, j, k]) for i, j, k in zip(
+                c_points[0], c_points[1], c_points[2])],
+            self.roi_num
+        )
+        for channel in range(img.shape[0]):
+            for roi_center in roi_centers:
+                self.roi_size, *_ = convert_to_dst_type(
+                    src=self.roi_size, dst=roi_center, wrap_sequence=True)
+                _zeros = torch.zeros_like(roi_center)  # type: ignore
+                roi_start_torch = maximum(
+                    roi_center - floor_divide(self.roi_size, 2), _zeros
+                )  # type: ignore
+                roi_end_torch = maximum(
+                    roi_start_torch + self.roi_size, roi_start_torch
+                )
+                if roi_start_torch.numel() == 1:
+                    self.slices = [
+                        slice(
+                            int(roi_start_torch.item()),
+                            int(roi_end_torch.item())
+                        )
+                    ]
+                else:
+                    self.slices = [
+                        slice(int(s), int(e)) for s, e in zip(
+                            roi_start_torch.tolist(),
+                            roi_end_torch.tolist()
+                        )
+                    ]
+                data[tuple(self.slices)] = np.min(data[tuple(self.slices)])
+            dropped_data.append(data)
+
+        return np.concatenate(dropped_data, axis=0)

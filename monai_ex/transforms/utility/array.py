@@ -9,6 +9,7 @@ from monai.transforms.compose import Transform, Randomizable
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.config import NdarrayTensor, DtypeLike
 from monai_ex.utils import convert_data_type_ex
+from skimage.morphology import skeletonize_3d
 
 
 class CastToTypeEx(CastToType):
@@ -213,3 +214,12 @@ class RandLabelToMask(Randomizable, Transform):
             if (merge_channels or self.merge_channels)
             else data
         )
+
+
+class ExtractCenterline(Transform):
+    """Extract centerline of curvilinear structure."""
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(self, msk):
+        return skeletonize_3d(msk.squeeze())

@@ -20,14 +20,15 @@ from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, Tuple, An
 import torch
 import numpy as np
 
-from monai.config import KeysCollection
+from monai.config import KeysCollection, NdarrayOrTensor
 from monai.transforms.compose import MapTransform, Randomizable
 from monai_ex.transforms.spatial.array import (
     FixedResize,
     LabelMorphology,
     RandLabelMorphology,
     Rotate90Ex,
-    KSpaceResample
+    KSpaceResample,
+    RandomDrop
 )
 
 from monai.utils import (
@@ -129,7 +130,7 @@ class RandLabelMorphologyd(Randomizable, MapTransform):
                 continue
             d[key] = self.converter(d[key], mode=self.mode[idx], radius=self.radius[idx], binary=self.binary[idx])
         return d
-    
+
 
 class RandRotate90Exd(Randomizable, MapTransform):
     """
@@ -230,8 +231,39 @@ class KSpaceResampled(MapTransform):
         return d
 
 
+class RandomDropd(MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.RandomDrop`."""
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        cline_key: str,
+        roi_size: int,
+        roi_number: int,
+        random_seed: int = 20221201,
+        allow_missing_keys: bool = False,
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.cline_key = cline_key
+        self.transformer = RandomDrop(
+            roi_number,
+            roi_size,
+            random_seed
+        )
+
+    def __call__(
+        self,
+        data: Mapping[Hashable, NdarrayOrTensor]
+    ) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        for key in self.key_iterator(d):
+            d[key] = self.transformer(d[key], d[self.cline_key])
+        return d
+
+
 FixedResizeD = FixedResizeDict = FixedResized
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
 RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd
 KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
+RandomDropD = RandomDropDict = RandomDropd
