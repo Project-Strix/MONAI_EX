@@ -150,7 +150,7 @@ class DataStatsExd(MapTransform):
 class SplitChannelExd(MapTransform):
     """
     Extension of `monai.transforms.SplitChanneld`.
-    Extended: `output_names`: the names to construct keys to store split data if 
+    Extended: `output_names`: the names to construct keys to store split data if
               you don't want postfixes.
               `remove_origin`: delete original data of given keys
 
@@ -411,11 +411,11 @@ class RandLabelToMaskd(Randomizable, MapTransform):
             assert len(label) == len(self.select_labels), 'length of cls_label_key must equal to length of mask select_labels'
 
             if isinstance(label, (list, tuple)):
-                label = { i:L for i, L in enumerate(label, 1)}
+                label = {i: L for i, L in enumerate(label, 1)}
             elif isinstance(label, (int, float)):
-                label = {1:label}
+                label = {1: label}
             assert isinstance(label, dict), 'Only support dict type label'
-            
+
             d[self.cls_label_key] = label[self.select_label]
 
         for key in self.keys:
@@ -430,19 +430,20 @@ class ExtractCenterlined(Randomizable, MapTransform):
     def __init__(
         self,
         keys: KeysCollection,
-        label_key: str,
+        output_key: str,
         allow_missing_keys: bool = False
     ) -> None:
         super().__init__(keys, allow_missing_keys)
-        self.label_key = label_key
-        self.transformer = ExtractCenterline()
+        self.output_key = output_key
+        self.converter = ExtractCenterline()
 
     def __call__(
         self,
         data: Mapping[Hashable, NdarrayOrTensor]
     ) -> Dict[Hashable, NdarrayOrTensor]:
         d = dict(data)
-        d['centerline'] = self.transformer(d[self.label_key])
+        for key in self.keys:
+            d[self.output_key] = self.converter(d[key])
         return d
 
 

@@ -28,7 +28,7 @@ from monai_ex.transforms.spatial.array import (
     RandLabelMorphology,
     Rotate90Ex,
     KSpaceResample,
-    RandomDrop
+    RandDrop
 )
 
 from monai.utils import (
@@ -51,7 +51,7 @@ class FixedResized(MapTransform):
 
     Args:
         keys: Keys to pick data for transformation.
-    """    
+    """
     def __init__(
         self,
         keys: KeysCollection,
@@ -231,7 +231,7 @@ class KSpaceResampled(MapTransform):
         return d
 
 
-class RandomDropd(MapTransform):
+class RandDropd(MapTransform):
     """Dictionary-based version :py:class:`monai_ex.transforms.RandomDrop`."""
 
     def __init__(
@@ -245,7 +245,7 @@ class RandomDropd(MapTransform):
     ) -> None:
         super().__init__(keys, allow_missing_keys)
         self.cline_key = cline_key
-        self.transformer = RandomDrop(
+        self.transformer = RandDrop(
             roi_number,
             roi_size,
             random_seed
@@ -266,4 +266,4 @@ LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
 RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd
 KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
-RandomDropD = RandomDropDict = RandomDropd
+RandDropD = RandDropDict = RandDropd

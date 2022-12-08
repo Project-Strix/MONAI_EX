@@ -7,7 +7,6 @@ from typing import Optional, Sequence, Union, Tuple
 
 import numpy as np
 import torch
-import random
 from copy import deepcopy
 from torch.nn.functional import interpolate as _torch_interp
 from monai.transforms.compose import Transform, Randomizable
@@ -21,6 +20,7 @@ from monai.transforms.utils_pytorch_numpy_unification import (
     floor_divide,
     maximum
 )
+
 
 class FixedResize(Transform):
     """
@@ -84,7 +84,7 @@ class FixedResize(Transform):
         else:
             spatial_size_ = self.spatial_size
 
-        for idx in np.where(np.equal(spatial_size_, 0))[0]: #change 0 to -1
+        for idx in np.where(np.equal(spatial_size_, 0))[0]:  # change 0 to -1
             spatial_size_[idx] = -1
 
         aspect_ratio = np.divide(img.squeeze().shape, spatial_size_)
@@ -138,7 +138,7 @@ class LabelMorphology(Transform):
         self.radius = self.radius if radius is None else radius
         self.binary = self.binary if binary is None else binary
 
-        input_ndim = img.squeeze().ndim # spatial ndim
+        input_ndim = img.squeeze().ndim  # spatial ndim
         if input_ndim == 2:
             structure = ndi.generate_binary_structure(2, 1)
         elif input_ndim == 3:
@@ -156,7 +156,7 @@ class LabelMorphology(Transform):
                 img = ndi.binary_closing(img, structure=structure, iterations=self.radius)
             else:
                 for _ in range(self.radius):
-                    img = ndi.grey_closing(img, footprint=structure)        
+                    img = ndi.grey_closing(img, footprint=structure)
         elif self.mode == 'dilation':
             if self.binary:
                 img = ndi.binary_dilation(img, structure=structure, iterations=self.radius)
@@ -258,10 +258,10 @@ class KSpaceResample(Transform, Fourier):
         """
         Args:
             pixdim (Union[Sequence[float], float]): output voxel spacing. if providing a single number,
-                it will be used as isotropic spacing, e.g. [2.0] will be padded to [2.0, 2.0, 2.0]. 
-                Items of the pixdim sequence map to the spatial dimensions of input image, 
+                it will be used as isotropic spacing, e.g. [2.0] will be padded to [2.0, 2.0, 2.0].
+                Items of the pixdim sequence map to the spatial dimensions of input image,
                 if length of pixdim sequence is longer than image spatial dimensions,
-                will ignore the longer part, if shorter, will pad with the last value. 
+                will ignore the longer part, if shorter, will pad with the last value.
                 For example, for 3D image if pixdim is [1.0, 2.0] it will be padded to [1.0, 2.0, 2.0]
             diagonal (bool, optional): whether to resample the input to have a diagonal affine matrix.
                 If True, the input data is resampled to the following affine::
@@ -325,13 +325,13 @@ class KSpaceResample(Transform, Fourier):
         return output_data, affine, new_affine
 
 
-class RandomDrop(Randomizable, Transform):
+class RandDrop(Randomizable, Transform):
     """ Drop a number of patchs on the centerline of curvilinear structure randomly.
 
     Args:
         roi_number (int): Number of the drop roi.
         roi_size (int): size of the drop ROI.
-        random_seed (int) : set the random state with an integer seed.
+        random_seed (int) : set the random state with an integer seed
     """
     def __init__(
         self,
@@ -343,10 +343,20 @@ class RandomDrop(Randomizable, Transform):
         self.roi_size = roi_size
         self.random_seed = random_state
 
+    def randomize(self, c_points) -> None:
+        idx = self.R.choice(len(c_points[0]), size=self.roi_num, replace=False)
+        roi_centers = []
+        for i in idx:
+            roi_center = [1]
+            roi_center += [c_points[d][i] for d in range(len(c_points))]            
+            roi_centers.append(np.array(roi_center))
+        self.roi_centers = torch.Tensor(roi_centers)
+
     def __call__(
         self,
         img: NdarrayOrTensor,
-        cline: NdarrayOrTensor
+        cline: np.ndarray,
+        randomize: bool = True
     ) -> NdarrayOrTensor:
         """
             Args:
@@ -356,14 +366,14 @@ class RandomDrop(Randomizable, Transform):
         data = deepcopy(img)
         dropped_data = []
         c_points = np.nonzero(cline)
-        random.seed(self.random_seed)
-        roi_centers = random.sample(
-            [torch.FloatTensor([1, i, j, k]) for i, j, k in zip(
-                c_points[0], c_points[1], c_points[2])],
-            self.roi_num
-        )
+        if isinstance(img, np.ndarray) and img.shape[0] != 1:
+            img = np.expand_dims(img, axis=0)
+        elif isinstance(img, torch.Tensor) and img.shape[0] != 1:
+            img = img.unsqueeze(0)
+        if randomize:
+            self.randomize(c_points)
         for channel in range(img.shape[0]):
-            for roi_center in roi_centers:
+            for roi_center in self.roi_centers:
                 self.roi_size, *_ = convert_to_dst_type(
                     src=self.roi_size, dst=roi_center, wrap_sequence=True)
                 _zeros = torch.zeros_like(roi_center)  # type: ignore
@@ -389,5 +399,4 @@ class RandomDrop(Randomizable, Transform):
                     ]
                 data[tuple(self.slices)] = np.min(data[tuple(self.slices)])
             dropped_data.append(data)
-
         return np.concatenate(dropped_data, axis=0)

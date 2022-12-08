@@ -8,8 +8,15 @@ from scipy import ndimage as ndi
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.config import NdarrayTensor, DtypeLike
-from monai_ex.utils import convert_data_type_ex
-from skimage.morphology import skeletonize_3d
+from monai_ex.utils import convert_data_type_ex, ensure_tuple
+from monai.utils import optional_import, min_version
+
+skeletonize_3D, has_skeletonize_3D = optional_import(
+    module="skimage.morphology._skeletonize",
+    version="0.19.0",
+    version_checker=min_version,
+    name="skeletonize_3d"
+)
 
 
 class CastToTypeEx(CastToType):
@@ -222,4 +229,7 @@ class ExtractCenterline(Transform):
         super().__init__()
 
     def __call__(self, msk):
-        return skeletonize_3d(msk.squeeze())
+        if has_skeletonize_3D:
+            return skeletonize_3D(msk.squeeze())
+        else:
+            raise RuntimeError('Skimage.morphology.skeletonize_3d required.')
