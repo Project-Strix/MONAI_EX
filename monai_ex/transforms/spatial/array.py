@@ -20,6 +20,7 @@ from monai.transforms.utils_pytorch_numpy_unification import (
     floor_divide,
     maximum
 )
+from monai_ex.utils.misc import get_centers
 
 
 class FixedResize(Transform):
@@ -325,61 +326,55 @@ class KSpaceResample(Transform, Fourier):
         return output_data, affine, new_affine
 
 
-class RandDrop(Randomizable, Transform):
+class RandomDrop(Randomizable, Transform):
     """ Drop a number of patchs on the centerline of curvilinear structure randomly.
 
     Args:
-        roi_number (int): Number of the drop roi.
-        roi_size (int): size of the drop ROI.
+        roi_number (int): Number of the dropped ROI.
+        roi_size (int): size of the dropped ROI.
         random_seed (int) : set the random state with an integer seed
     """
     def __init__(
         self,
         roi_number: int,
         roi_size: int,
-        random_state: int = 20221201
+        random_seed: int = None
     ) -> None:
         self.roi_num = roi_number
         self.roi_size = roi_size
-        self.random_seed = random_state
+        self.random_seed = random_seed
 
-    def randomize(self, c_points) -> None:
-        idx = self.R.choice(len(c_points[0]), size=self.roi_num, replace=False)
-        roi_centers = []
-        for i in idx:
-            roi_center = [1]
-            roi_center += [c_points[d][i] for d in range(len(c_points))]            
-            roi_centers.append(np.array(roi_center))
-        self.roi_centers = torch.Tensor(roi_centers)
+    def randomize(self, c_points) -> torch.Tensor:
+        self.roi_centers = get_centers(c_points, self.roi_num, self.R)
 
     def __call__(
         self,
         img: NdarrayOrTensor,
-        cline: np.ndarray,
-        randomize: bool = True
+        roi: np.ndarray,
     ) -> NdarrayOrTensor:
         """
             Args:
             img (NdarrayOrTensor): The image to drop patches.
-            cline (NdarrayOrTensor): The centerline of curvilinear structure, it can be extracted with `monai_ex.transforms.ExtractCenterline`
+            roi (NdarrayOrTensor): The centerline of curvilinear structure, it can be extracted with `monai_ex.transforms.ExtractCenterline`
         """
-        data = deepcopy(img)
         dropped_data = []
-        c_points = np.nonzero(cline)
+        c_points = np.nonzero(roi)
         if isinstance(img, np.ndarray) and img.shape[0] != 1:
             img = np.expand_dims(img, axis=0)
         elif isinstance(img, torch.Tensor) and img.shape[0] != 1:
             img = img.unsqueeze(0)
-        if randomize:
-            self.randomize(c_points)
+        data = deepcopy(img)
+        if self.random_seed:
+            self.set_random_state(seed=self.random_seed)
+        self.randomize(c_points)
         for channel in range(img.shape[0]):
             for roi_center in self.roi_centers:
                 self.roi_size, *_ = convert_to_dst_type(
-                    src=self.roi_size, dst=roi_center, wrap_sequence=True)
-                _zeros = torch.zeros_like(roi_center)  # type: ignore
+                    src=self.roi_size, dst=roi_center, wrap_sequence=True) # convert roi size to roi center
+                _zeros = torch.zeros_like(roi_center)
                 roi_start_torch = maximum(
                     roi_center - floor_divide(self.roi_size, 2), _zeros
-                )  # type: ignore
+                )
                 roi_end_torch = maximum(
                     roi_start_torch + self.roi_size, roi_start_torch
                 )

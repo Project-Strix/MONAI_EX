@@ -28,7 +28,7 @@ from monai_ex.transforms.spatial.array import (
     RandLabelMorphology,
     Rotate90Ex,
     KSpaceResample,
-    RandDrop
+    RandomDrop
 )
 
 from monai.utils import (
@@ -231,21 +231,22 @@ class KSpaceResampled(MapTransform):
         return d
 
 
-class RandDropd(MapTransform):
+class RandomDropd(Randomizable, MapTransform):
     """Dictionary-based version :py:class:`monai_ex.transforms.RandomDrop`."""
 
     def __init__(
         self,
         keys: KeysCollection,
-        cline_key: str,
-        roi_size: int,
-        roi_number: int,
-        random_seed: int = 20221201,
+        roi_key: str,
+        roi_size: int = 10,
+        roi_number: int = 10,
+        random_seed: int = None,
         allow_missing_keys: bool = False,
     ) -> None:
         super().__init__(keys, allow_missing_keys)
-        self.cline_key = cline_key
-        self.transformer = RandDrop(
+        self.roi_key = roi_key
+        self.random_seed = random_seed
+        self.dropper = RandomDrop(
             roi_number,
             roi_size,
             random_seed
@@ -256,8 +257,9 @@ class RandDropd(MapTransform):
         data: Mapping[Hashable, NdarrayOrTensor]
     ) -> Dict[Hashable, NdarrayOrTensor]:
         d = dict(data)
+        self.dropper.set_random_state(seed=self.random_seed)
         for key in self.key_iterator(d):
-            d[key] = self.transformer(d[key], d[self.cline_key])
+            d[key] = self.dropper(d[key], d[self.roi_key])
         return d
 
 
@@ -266,4 +268,4 @@ LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
 RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd
 KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
-RandDropD = RandDropDict = RandDropd
+RandDropD = RandDropDict = RandomDropd

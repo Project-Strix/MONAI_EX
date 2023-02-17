@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional
+import numpy as np
 
 import torch
 from monai.utils.misc import issequenceiterable
@@ -89,6 +90,17 @@ def ensure_list_rep(vals: Any, dim: int) -> List[Any]:
 def _register_generic(module_dict, module_name, module):
     assert module_name not in module_dict
     module_dict[module_name] = module
+
+
+def get_centers(c_points, roi_num: int, random_state: Optional[np.random.RandomState] = None):
+    choice = random_state.choice
+    idx = choice(len(c_points[0]), size=roi_num, replace=False)
+    roi_centers = []
+    for i in idx:
+        roi_center = [1]
+        roi_center += [c_points[d][i] for d in range(len(c_points))]
+        roi_centers.append(np.array(roi_center))
+    return torch.Tensor(roi_centers)
 
 
 class Registry(dict):
