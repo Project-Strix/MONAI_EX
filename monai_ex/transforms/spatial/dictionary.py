@@ -28,7 +28,8 @@ from monai_ex.transforms.spatial.array import (
     RandLabelMorphology,
     Rotate90Ex,
     KSpaceResample,
-    RandomDrop
+    RandomDrop,
+    MaskOn
 )
 
 from monai.utils import (
@@ -263,9 +264,23 @@ class RandomDropd(Randomizable, MapTransform):
         return d
 
 
+class MaskOnd(MapTransform):
+    def __init__(self, keys: KeysCollection, mask_key: str, allow_missing_keys: bool = False) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.msk_key = mask_key
+        self.transformer = MaskOn()
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.key_iterator(d):
+            d[key] = self.transformer(d[key], d[self.msk_key])
+        return d
+
+
 FixedResizeD = FixedResizeDict = FixedResized
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
 RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd
 KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
 RandDropD = RandDropDict = RandomDropd
+MaskOnD = MaskOnDict = MaskOnd

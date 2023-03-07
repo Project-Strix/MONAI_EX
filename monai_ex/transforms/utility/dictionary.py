@@ -431,11 +431,12 @@ class ExtractCenterlined(Randomizable, MapTransform):
         self,
         keys: KeysCollection,
         output_key: str,
+        mode: str = '3D',
         allow_missing_keys: bool = False
     ) -> None:
         super().__init__(keys, allow_missing_keys)
         self.output_key = output_key
-        self.converter = ExtractCenterline()
+        self.converter = ExtractCenterline(mode)
 
     def __call__(
         self,

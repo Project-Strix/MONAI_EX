@@ -1,21 +1,27 @@
 import logging
 from typing import Callable, Optional, Union, Dict, Any, Sequence
-
+from warnings import warn
 import numpy as np
 import torch
 from scipy import ndimage as ndi
-
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms import DataStats, SaveImage, CastToType
 from monai.config import NdarrayTensor, DtypeLike
 from monai_ex.utils import convert_data_type_ex, ensure_tuple
 from monai.utils import optional_import, min_version
+from copy import deepcopy
 
 skeletonize_3D, has_skeletonize_3D = optional_import(
     module="skimage.morphology._skeletonize",
     version="0.19.0",
     version_checker=min_version,
     name="skeletonize_3d"
+)
+skeletonize_2D, has_skeletonize_2D = optional_import(
+    module="skimage.morphology._skeletonize",
+    version="0.19.0",
+    version_checker=min_version,
+    name="skeletonize_2d"
 )
 
 
@@ -225,11 +231,38 @@ class RandLabelToMask(Randomizable, Transform):
 
 class ExtractCenterline(Transform):
     """Extract centerline of curvilinear structure."""
-    def __init__(self) -> None:
+    def __init__(self, mode) -> None:
         super().__init__()
+        self.mode = mode
+
+    def _zeros_like(self, input):
+        if isinstance(input, np.ndarray):
+            return np.zeros_like(input)
+        elif isinstance(input, torch.Tensor):
+            return torch.zeros_like(input)
+        else:
+            raise ValueError(f'msk should be Ndarray or Tensor, but got {type(input)}')
 
     def __call__(self, msk):
-        if has_skeletonize_3D:
-            return skeletonize_3D(msk.squeeze())
-        else:
-            raise RuntimeError('Skimage.morphology.skeletonize_3d required.')
+        if self.mode == '2D':
+            if has_skeletonize_2D:
+                if len(msk.shape) == 2:
+                    return skeletonize_2D(msk.squeeze())
+                if len(msk.shape) == 3:
+                    data = self._zeros_like(msk)
+                    for i in range(msk.shape[0]):
+                        data[i, ...] = skeletonize_2D(deepcopy(msk[i, ...]))
+                    return data
+            else:
+                raise RuntimeError('Skimage.morphology.skeletonize_2d required.')
+        elif self.mode == '3D':
+            if has_skeletonize_3D:
+                if len(msk.shape) == 3:
+                    return skeletonize_3D(msk.squeeze())
+                elif len(msk.shape) == 4:
+                    data = self._zeros_like(msk)
+                    for i in range(msk.shape[0]):
+                        data[i, ...] = skeletonize_3D(deepcopy(msk[i, ...]))
+                    return data
+            else:
+                raise RuntimeError('Skimage.morphology.skeletonize_3d required.')

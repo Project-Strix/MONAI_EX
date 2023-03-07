@@ -4,7 +4,6 @@ https://github.com/Project-MONAI/MONAI/wiki/MONAI_Design
 """
 
 from typing import Optional, Sequence, Union, Tuple
-
 import numpy as np
 import torch
 from copy import deepcopy
@@ -395,3 +394,25 @@ class RandomDrop(Randomizable, Transform):
                 data[tuple(self.slices)] = np.min(data[tuple(self.slices)])
             dropped_data.append(data)
         return np.concatenate(dropped_data, axis=0)
+
+class MaskOn(Transform):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(
+        self,
+        img: NdarrayOrTensor,
+        msk: NdarrayOrTensor
+    ):  
+        if img.shape == msk.shape:
+            return img * msk
+        elif img.shape[0] > msk.shape[0]:
+            for i in range(img.shape[0]):
+                img[i, ...] = img[i, ...] * msk
+            return img
+        elif img.shape[0] == msk.shape[0]:
+            for i in range(img.shape[1]):
+                img[:, i, ...] = img[:, i, ...] * msk
+            return img
+        else:
+            raise ImportError("Check Channel dimension")
