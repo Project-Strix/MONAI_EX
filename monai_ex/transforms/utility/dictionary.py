@@ -16,6 +16,7 @@ from monai_ex.transforms.utility.array import (
     DataStatsEx,
     DataLabelling,
     RandLabelToMask,
+    ExtractCenterline
 )
 
 from monai_ex.transforms import (
@@ -149,7 +150,7 @@ class DataStatsExd(MapTransform):
 class SplitChannelExd(MapTransform):
     """
     Extension of `monai.transforms.SplitChanneld`.
-    Extended: `output_names`: the names to construct keys to store split data if 
+    Extended: `output_names`: the names to construct keys to store split data if
               you don't want postfixes.
               `remove_origin`: delete original data of given keys
 
@@ -205,6 +206,7 @@ class SplitChannelExd(MapTransform):
                 d.pop(f"{key}_{self.meta_key_postfix}")
         return d
 
+
 class DataLabellingd(MapTransform):
     def __init__(
         self,
@@ -220,7 +222,6 @@ class DataLabellingd(MapTransform):
         for idx, key in enumerate(self.keys):
             d[key] = self.converter(d[key])
         return d
-
 
 
 class ConcatModalityd(MapTransform):
@@ -410,16 +411,40 @@ class RandLabelToMaskd(Randomizable, MapTransform):
             assert len(label) == len(self.select_labels), 'length of cls_label_key must equal to length of mask select_labels'
 
             if isinstance(label, (list, tuple)):
-                label = { i:L for i, L in enumerate(label, 1)}
+                label = {i: L for i, L in enumerate(label, 1)}
             elif isinstance(label, (int, float)):
-                label = {1:label}
+                label = {1: label}
             assert isinstance(label, dict), 'Only support dict type label'
-            
+
             d[self.cls_label_key] = label[self.select_label]
 
         for key in self.keys:
             d[key] = self.converter(d[key], select_label=self.select_label)
 
+        return d
+
+
+class ExtractCenterlined(Randomizable, MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.ExtractCenterline`."""
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        output_key: str,
+        mode: str = '3D',
+        allow_missing_keys: bool = False
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.output_key = output_key
+        self.converter = ExtractCenterline(mode)
+
+    def __call__(
+        self,
+        data: Mapping[Hashable, NdarrayOrTensor]
+    ) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        for key in self.keys:
+            d[self.output_key] = self.converter(d[key])
         return d
 
 
@@ -445,6 +470,7 @@ class GetItemd(MapTransform):
             d[key] = d[key][index]
         return d
 
+
 ToTensorExD = ToTensorExDict = ToTensorExd
 CastToTypeExD = CastToTypeExDict = CastToTypeExd
 DataStatsExD = DataStatsExDict = DataStatsExd
@@ -453,4 +479,5 @@ DataLabellinD = DataLabellingDict = DataLabellingd
 ConcatModalityD = ConcatModalityDict = ConcatModalityd
 RandCrop2dByPosNegLabelD = RandCrop2dByPosNegLabelDict = RandCrop2dByPosNegLabeld
 RandLabelToMaskD = RandLabelToMaskDict = RandLabelToMaskd
+ExtractCenterlineD = ExtractCenterlineDict = ExtractCenterlined
 GetItemD = GetItemDict = GetItemd

@@ -4,10 +4,9 @@ https://github.com/Project-MONAI/MONAI/wiki/MONAI_Design
 """
 
 from typing import Optional, Sequence, Union, Tuple
-
 import numpy as np
 import torch
-
+from copy import deepcopy
 from torch.nn.functional import interpolate as _torch_interp
 from monai.transforms.compose import Transform, Randomizable
 from monai.transforms.croppad.array import ResizeWithPadOrCrop
@@ -16,6 +15,11 @@ from monai.data.utils import compute_shape_offset, to_affine_nd, zoom_affine
 from monai.utils import InterpolateMode, ensure_tuple, ensure_tuple_size
 from monai.utils.type_conversion import NdarrayOrTensor, convert_data_type, convert_to_dst_type
 from scipy import ndimage as ndi
+from monai.transforms.utils_pytorch_numpy_unification import (
+    floor_divide,
+    maximum
+)
+from monai_ex.utils.misc import get_centers
 
 
 class FixedResize(Transform):
@@ -80,7 +84,7 @@ class FixedResize(Transform):
         else:
             spatial_size_ = self.spatial_size
 
-        for idx in np.where(np.equal(spatial_size_, 0))[0]: #change 0 to -1
+        for idx in np.where(np.equal(spatial_size_, 0))[0]:  # change 0 to -1
             spatial_size_[idx] = -1
 
         aspect_ratio = np.divide(img.squeeze().shape, spatial_size_)
@@ -134,7 +138,7 @@ class LabelMorphology(Transform):
         self.radius = self.radius if radius is None else radius
         self.binary = self.binary if binary is None else binary
 
-        input_ndim = img.squeeze().ndim # spatial ndim
+        input_ndim = img.squeeze().ndim  # spatial ndim
         if input_ndim == 2:
             structure = ndi.generate_binary_structure(2, 1)
         elif input_ndim == 3:
@@ -152,7 +156,7 @@ class LabelMorphology(Transform):
                 img = ndi.binary_closing(img, structure=structure, iterations=self.radius)
             else:
                 for _ in range(self.radius):
-                    img = ndi.grey_closing(img, footprint=structure)        
+                    img = ndi.grey_closing(img, footprint=structure)
         elif self.mode == 'dilation':
             if self.binary:
                 img = ndi.binary_dilation(img, structure=structure, iterations=self.radius)
@@ -254,10 +258,10 @@ class KSpaceResample(Transform, Fourier):
         """
         Args:
             pixdim (Union[Sequence[float], float]): output voxel spacing. if providing a single number,
-                it will be used as isotropic spacing, e.g. [2.0] will be padded to [2.0, 2.0, 2.0]. 
-                Items of the pixdim sequence map to the spatial dimensions of input image, 
+                it will be used as isotropic spacing, e.g. [2.0] will be padded to [2.0, 2.0, 2.0].
+                Items of the pixdim sequence map to the spatial dimensions of input image,
                 if length of pixdim sequence is longer than image spatial dimensions,
-                will ignore the longer part, if shorter, will pad with the last value. 
+                will ignore the longer part, if shorter, will pad with the last value.
                 For example, for 3D image if pixdim is [1.0, 2.0] it will be padded to [1.0, 2.0, 2.0]
             diagonal (bool, optional): whether to resample the input to have a diagonal affine matrix.
                 If True, the input data is resampled to the following affine::
@@ -319,3 +323,96 @@ class KSpaceResample(Transform, Fourier):
         if self.image_only:
             return output_data
         return output_data, affine, new_affine
+
+
+class RandomDrop(Randomizable, Transform):
+    """ Drop a number of patchs on the centerline of curvilinear structure randomly.
+
+    Args:
+        roi_number (int): Number of the dropped ROI.
+        roi_size (int): size of the dropped ROI.
+        random_seed (int) : set the random state with an integer seed
+    """
+    def __init__(
+        self,
+        roi_number: int,
+        roi_size: int,
+        random_seed: int = None
+    ) -> None:
+        self.roi_num = roi_number
+        self.roi_size = roi_size
+        self.random_seed = random_seed
+
+    def randomize(self, c_points) -> torch.Tensor:
+        self.roi_centers = get_centers(c_points, self.roi_num, self.R)
+
+    def __call__(
+        self,
+        img: NdarrayOrTensor,
+        roi: np.ndarray,
+    ) -> NdarrayOrTensor:
+        """
+            Args:
+            img (NdarrayOrTensor): The image to drop patches.
+            roi (NdarrayOrTensor): The centerline of curvilinear structure, it can be extracted with `monai_ex.transforms.ExtractCenterline`
+        """
+        dropped_data = []
+        c_points = np.nonzero(roi)
+        if isinstance(img, np.ndarray) and img.shape[0] != 1:
+            img = np.expand_dims(img, axis=0)
+        elif isinstance(img, torch.Tensor) and img.shape[0] != 1:
+            img = img.unsqueeze(0)
+        data = deepcopy(img)
+        if self.random_seed:
+            self.set_random_state(seed=self.random_seed)
+        self.randomize(c_points)
+        for channel in range(img.shape[0]):
+            for roi_center in self.roi_centers:
+                self.roi_size, *_ = convert_to_dst_type(
+                    src=self.roi_size, dst=roi_center, wrap_sequence=True) # convert roi size to roi center
+                _zeros = torch.zeros_like(roi_center)
+                roi_start_torch = maximum(
+                    roi_center - floor_divide(self.roi_size, 2), _zeros
+                )
+                roi_end_torch = maximum(
+                    roi_start_torch + self.roi_size, roi_start_torch
+                )
+                if roi_start_torch.numel() == 1:
+                    self.slices = [
+                        slice(
+                            int(roi_start_torch.item()),
+                            int(roi_end_torch.item())
+                        )
+                    ]
+                else:
+                    self.slices = [
+                        slice(int(s), int(e)) for s, e in zip(
+                            roi_start_torch.tolist(),
+                            roi_end_torch.tolist()
+                        )
+                    ]
+                data[tuple(self.slices)] = np.min(data[tuple(self.slices)])
+            dropped_data.append(data)
+        return np.concatenate(dropped_data, axis=0)
+
+class MaskOn(Transform):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __call__(
+        self,
+        img: NdarrayOrTensor,
+        msk: NdarrayOrTensor
+    ):  
+        if img.shape == msk.shape:
+            return img * msk
+        elif img.shape[0] > msk.shape[0]:
+            for i in range(img.shape[0]):
+                img[i, ...] = img[i, ...] * msk
+            return img
+        elif img.shape[0] == msk.shape[0]:
+            for i in range(img.shape[1]):
+                img[:, i, ...] = img[:, i, ...] * msk
+            return img
+        else:
+            raise ImportError("Check Channel dimension")

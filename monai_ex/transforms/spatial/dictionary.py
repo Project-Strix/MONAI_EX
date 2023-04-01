@@ -20,14 +20,16 @@ from typing import Dict, Hashable, Mapping, Optional, Sequence, Union, Tuple, An
 import torch
 import numpy as np
 
-from monai.config import KeysCollection
+from monai.config import KeysCollection, NdarrayOrTensor
 from monai.transforms.compose import MapTransform, Randomizable
 from monai_ex.transforms.spatial.array import (
     FixedResize,
     LabelMorphology,
     RandLabelMorphology,
     Rotate90Ex,
-    KSpaceResample
+    KSpaceResample,
+    RandomDrop,
+    MaskOn
 )
 
 from monai.utils import (
@@ -50,7 +52,7 @@ class FixedResized(MapTransform):
 
     Args:
         keys: Keys to pick data for transformation.
-    """    
+    """
     def __init__(
         self,
         keys: KeysCollection,
@@ -129,7 +131,7 @@ class RandLabelMorphologyd(Randomizable, MapTransform):
                 continue
             d[key] = self.converter(d[key], mode=self.mode[idx], radius=self.radius[idx], binary=self.binary[idx])
         return d
-    
+
 
 class RandRotate90Exd(Randomizable, MapTransform):
     """
@@ -230,8 +232,55 @@ class KSpaceResampled(MapTransform):
         return d
 
 
+class RandomDropd(Randomizable, MapTransform):
+    """Dictionary-based version :py:class:`monai_ex.transforms.RandomDrop`."""
+
+    def __init__(
+        self,
+        keys: KeysCollection,
+        roi_key: str,
+        roi_size: int = 10,
+        roi_number: int = 10,
+        random_seed: int = None,
+        allow_missing_keys: bool = False,
+    ) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.roi_key = roi_key
+        self.random_seed = random_seed
+        self.dropper = RandomDrop(
+            roi_number,
+            roi_size,
+            random_seed
+        )
+
+    def __call__(
+        self,
+        data: Mapping[Hashable, NdarrayOrTensor]
+    ) -> Dict[Hashable, NdarrayOrTensor]:
+        d = dict(data)
+        self.dropper.set_random_state(seed=self.random_seed)
+        for key in self.key_iterator(d):
+            d[key] = self.dropper(d[key], d[self.roi_key])
+        return d
+
+
+class MaskOnd(MapTransform):
+    def __init__(self, keys: KeysCollection, mask_key: str, allow_missing_keys: bool = False) -> None:
+        super().__init__(keys, allow_missing_keys)
+        self.msk_key = mask_key
+        self.transformer = MaskOn()
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.key_iterator(d):
+            d[key] = self.transformer(d[key], d[self.msk_key])
+        return d
+
+
 FixedResizeD = FixedResizeDict = FixedResized
 LabelMorphologyD = LabelMorphologyDict = LabelMorphologyd
 RandRotate90ExD = RandRotate90ExDict = RandRotate90Exd
 RandLabelMorphologyD = RandLabelMorphologyDict = RandLabelMorphologyd
 KSpaceResampleD = KSpaceResampleDict = KSpaceResampled
+RandDropD = RandDropDict = RandomDropd
+MaskOnD = MaskOnDict = MaskOnd
