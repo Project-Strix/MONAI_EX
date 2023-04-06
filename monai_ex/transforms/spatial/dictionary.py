@@ -241,17 +241,20 @@ class RandomDropd(Randomizable, MapTransform):
         roi_key: str,
         roi_size: int = 10,
         roi_number: int = 10,
+        spacing: int = 5,
         random_seed: int = None,
         allow_missing_keys: bool = False,
     ) -> None:
         super().__init__(keys, allow_missing_keys)
         self.roi_key = roi_key
         self.random_seed = random_seed
-        self.dropper = RandomDrop(
-            roi_number,
-            roi_size,
-            random_seed
-        )
+        self.roi_size = roi_size
+        self.roi_number = roi_number
+        self.dropper = RandomDrop(roi_number, roi_size, spacing, random_seed)
+
+    def step(self):
+        self.dropper.roi_num = self.roi_number
+        self.dropper.roi_size = self.roi_size
 
     def __call__(
         self,
